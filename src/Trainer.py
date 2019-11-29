@@ -57,82 +57,31 @@ class Trainer(Thread):
                     if self.exit :
                         break
                     continue
-
-            # TODO put on the right device
-            # FIXME define lambda functions ?
-            # FIXME replace x and target/... prefixes
-            # FIXME add detach
-            # FIXME check for the sizes that are needed !!!!!
-
-            seq_len = trajectories[0].length
-        
-            #----------------------------------
-            # 1. EFFICIENT COMPUTATION ON CNNs (time is folded with batch size)
-            #----------------------------------
-
-            observations = torch.cat(tensors=[traj.observations for traj in trajectories], dim=0) # (batch*seq_len, ...)
-            x = self.model.body(observations)
-            x = x.chunk(batch_size, dim=0)
-
-            #--------------
-            # 2. LSTM LOOP (same length events but can be resetted)
-            #--------------
+            
+            # Create the batch, and put on GPU
+            # obs : (seq, batch, c, h, w)
+            obs = torch.stack([traj.observations for traj in trajectories], dim=1)
 
             lstm_hxs = (
                 torch.cat(tensors=[traj.lstm_initial_hidden for traj in trajectories], dim=1), # (1, 1, hidden)
                 torch.cat(tensors=[traj.lstm_initial_cell for traj in trajectories], dim=1) # (1, 1, hidden)
-            ) # (1, batch, hidden)
+            ) 
+            # lstm_hxs : (1, batch, hidden)
             x = torch.stack(tensors=x, dim=1).unsqueeze_(1) # (seq_len, 1, batch, input)
             done_mask = torch.stack(tensors=[traj.done for traj in trajectories], dim=0).unsqueeze_(0) # (1, batch, length)
-            
-            # TODO execute on CPU
-
-            # We need to invert the done_mask
             reset_mask = 1 - done_mask
+            behaviour_actions = torch.stack(tensors=[traj.actions for traj in trajectories], dim=1) # (seq_len, batch, num_actions)
+            rewards = torch.stack(tensors=[traj.rewards for traj in trajectories], dim=1) # (seq_len, batch, ...)
+            behaviour_log_probs = torch.stack(tensors=[traj.log_probs for traj in trajectories], dim=1) # (seq_len, batch, ...)
+          
 
-            # Custom LSTM loop because states can be resetted 
-            # I found this was the less-computationnaly expensive method
-            x_out = []
-
-            for i in range(seq_len):
-                # Don't do the operation inplace ! It breaks the autograd functionnality
-                # Hidden size and input size are the same in the model
-                result, lstm_hxs = self.model.lstm(x[i], lstm_hxs)
-                # Applying the mask to zero the hidden states of resetted games
-                lstm_hxs = [(reset_mask[:, :, i]*state) for state in lstm_hxs]
-                x_out.append(result)
-
-            x = torch.stack(tensors=x_results, dim=0)
-
-            x.squeeze_(1) # (seq_len, batch, input)
-
-            #-----------------------------------------
-            # 3. EFFICIENT COMPUTATION OF LAST LAYERS (time is folded with batch size)
-            #-----------------------------------------
-            
-            x = torch.cat(tensors=[x[:, i] for i in range(x.size(1))], dim=0)
-            assert x.size(0) == batch_size*seq_len, f"Issue last layers"
-            target_value, dist = self.model.tail(x)
-
-            # Selecting probabilities and co. for agents actions (behaviour policy)
-            behaviour_actions = torch.cat(tensors=[traj.actions for traj in trajectories], dim=0) # (batch*seq_len, ...)
-            target_log_probs = dist.log_prob(behaviour_actions.squeeze_(-1)).unsqueeze_(-1) # batch* (seq_len, ...)
-            target_entropy = dist.entropy() # batch* (seq_len, ...)
-
-            # Reshaping for v-trace
-            target_log_probs = torch.stack(tensors=target_log_probs.chunk(batch_size, dim=0), dim=1) # (seq_len, batch, ...)
-            target_entropy = torch.stack(tensors=target_entropy.chunk(batch_size, dim=0), dim=1) # (seq_len, batch, ...)
-            target_value = torch.stack(tensors=target_value.chunk(batch_size, dim=0), dim=1) # (seq_len, batch, ...)
-
-            # TODO assert size equals
+            target_log_probs, target_entropy, target_value = self.model(obs, lstm_hxs, reset_mask, behaviour_actions)
 
             #------------
             # 4. V-TRACE
             #------------
 
             # Additional tensors for v-trace
-            rewards = torch.stack(tensors=[traj.rewards for traj in trajectories], dim=1) # (seq_len, batch, ...)
-            behaviour_log_probs = torch.stack(tensors=[traj.log_probs for traj in trajectories], dim=1) # (seq_len, batch, ...)
 
             # v-trace computation
             v_targets, rhos = self.vtrace(target_value=target_value,

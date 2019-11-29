@@ -65,11 +65,11 @@ class AgentMemory(object):
         # This should already be done by detach but let's keep things safe !
         return Trajectory(
             length = self.step, 
-            observations = self.observations[:self.step].clone().detach_().to(device),
-            actions = self.actions[:self.step].clone().detach_().to(device),
-            rewards = self.rewards[:self.step].clone().detach_().to(device), 
-            log_probs = self.log_probs[:self.step].clone().detach_().to(device), 
-            done = self.done[:self.step].clone().detach_().to(device),
-            lstm_initial_hidden = self.lstm_initial_hidden.clone().detach_().to(device),
-            lstm_initial_cell = self.lstm_initial_cell.clone().detach_().to(device)
+            observations = self.observations[:self.step].clone().to(device),
+            actions = self.actions[:self.step].clone().to(device),
+            rewards = self.rewards[:self.step].clone().to(device), 
+            log_probs = self.log_probs[:self.step].clone().to(device), 
+            done = self.done[:self.step].clone().to(device),
+            lstm_initial_hidden = self.lstm_initial_hidden.clone().to(device),
+            lstm_initial_cell = self.lstm_initial_cell.clone().to(device)
         )

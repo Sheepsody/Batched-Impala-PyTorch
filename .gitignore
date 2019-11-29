@@ -1,0 +1,24 @@
+# Visual studio code
+.vscode/
+.pytest_cache/
+
+# Notebooks saves
+*/.ipynb*/
+
+# Checkpoints
+*.pt
+
+# Tensorboard, logs and recordings
+record*/
+log*/
+events*
+
+# Gym (Game, movies...)
+*.bk2
+
+# Images and videos
+*.jpg
+*.avi
+
+# Other
+__pycache__/

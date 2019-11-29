@@ -1,0 +1,120 @@
+{
+  "info": {
+    "angle_velocity": {
+      "address": 8261790,
+      "type": "|i1"
+    },
+    "camera_angle": {
+      "address": 8257685,
+      "type": "|u1"
+    },
+    "checkpoint": {
+      "address": 8261824,
+      "type": "|u1"
+    },
+    "checkpoint_num": {
+      "address": 8257864,
+      "type": "|u1"
+    },
+    "coins": {
+      "address": 8261120,
+      "type": "|u1"
+    },
+    "collision": {
+      "address": 8261714,
+      "type": "|u1"
+    },
+    "ground_status": {
+      "address": 8261792,
+      "type": "|u1"
+    },
+    "ground_type": {
+      "address": 8261806,
+      "type": "|u1"
+    },
+    "hop": {
+      "address": 8261663,
+      "type": "<u2"
+    },
+    "item_1": {
+      "address": 8260976,
+      "type": "|u1"
+    },
+    "item_2": {
+      "address": 8260713,
+      "type": "|u1"
+    },
+    "kart_angle": {
+      "address": 8261802,
+      "type": "<u2"
+    },
+    "lakitu": {
+      "address": 267,
+      "type": "|u1"
+    },
+    "lap": {
+      "address": 8261825,
+      "type": "|u1"
+    },
+    "lap_max": {
+      "address": 8261881,
+      "type": "|u1"
+    },
+    "lives": {
+      "address": 8257876,
+      "type": "|u1"
+    },
+    "milliseconds": {
+      "address": 8257793,
+      "type": "|d1"
+    },
+    "minutes": {
+      "address": 8257796,
+      "type": "|u1"
+    },
+    "mushroom_boost": {
+      "address": 8261710,
+      "type": "|u1"
+    },
+    "out_of_control": {
+      "address": 8261798,
+      "type": "|u1"
+    },
+    "rank": {
+      "address": 8261696,
+      "type": "|u1"
+    },
+    "seconds": {
+      "address": 8257794,
+      "type": "|d1"
+    },
+    "shrunken": {
+      "address": 8261680,
+      "type": "|u1"
+    },
+    "speed": {
+      "address": 8261866,
+      "type": "<u2"
+    },
+    "speed_x": {
+      "address": 8261666,
+      "type": "<i2"
+    },
+    "speed_y": {
+      "address": 8261668,
+      "type": "<i2"
+    },
+    "square_item": {
+      "address": 8260988,
+      "type": "|u1"
+    },
+    "x": {
+      "address": 8257672,
+      "type": "<u2"
+    },
+    "y": {
+      "address": 8257676,
+      "type": "<u2"
+    }
+  }
+}

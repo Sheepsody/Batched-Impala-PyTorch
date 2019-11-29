@@ -106,7 +106,7 @@ class Agent(Process):
                 .to(self.device)
 
             # Asynchronous prediction
-            action, log_prob = self.behaviour_policy.act(obs_tensor, lstm_hxs)
+            action, log_prob, lstm_hxs = self.behaviour_policy.act(obs_tensor, lstm_hxs)
 
             # Receive reward and new state           
             obs, reward, done, info = self.env.step(int(action.item()))
@@ -117,7 +117,7 @@ class Agent(Process):
                 action=action, 
                 reward=torch.tensor(reward),
                 log_prob=log_prob,
-                done=torch.tensor(done) # Major fix # FIXME replace done by reset ?
+                done=torch.tensor(done)
             )
 
             episode_reward += reward

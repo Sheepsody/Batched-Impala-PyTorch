@@ -88,7 +88,7 @@ class Trainer(Thread):
             # TODO execute on CPU
 
             # We need to invert the done_mask
-            done_mask = 1 - done_mask
+            reset_mask = 1 - done_mask
 
             # Custom LSTM loop because states can be resetted 
             # I found this was the less-computationnaly expensive method
@@ -99,7 +99,7 @@ class Trainer(Thread):
                 # Hidden size and input size are the same in the model
                 result, lstm_hxs = self.model.lstm(x[i], lstm_hxs)
                 # Applying the mask to zero the hidden states of resetted games
-                lstm_hxs = [(done_mask[:, :, i]*state) for state in lstm_hxs]
+                lstm_hxs = [(reset_mask[:, :, i]*state) for state in lstm_hxs]
                 x_out.append(result)
 
             x = torch.stack(tensors=x_results, dim=0)
@@ -148,17 +148,21 @@ class Trainer(Thread):
             loss_value = (v_targets[:-1] - target_value[:-1]).pow_(2)  # Remove bootstrapping, l2 loss
             loss_value = loss_value.sum()
 
-            # Policy loss -> rho * advantage * log_policy & entropy bonus sum(policy*log_policy)
+            # Policy loss -> - rho * advantage * log_policy & entropy bonus sum(policy*log_policy)
             # We detach the advantage because we don't compute
+            # A = reward + gamma * V_{t+1} - V_t
+            # L = - log_prob * A
+            # The advantage function reduces variance
             advantage = rewards[:-1] + discount_factor * v_targets[1:] - target_value[:-1]
-            loss_policy = rhos[:-1] * target_log_probs[:-1] * advantage.detach_()
+            loss_policy = - rhos[:-1] * target_log_probs[:-1] * advantage.detach_()
             loss_policy = loss_policy.sum()
+
             # Adding the entropy bonus (much like A3C for instance)
-            entropy_bonus = - target_entropy[:-1]
-            entropy_bonus = entropy_bonus.sum()
+            # The entropy is like a measure of the disorder
+            entropy = target_entropy[:-1].sum()
 
             # Summing all the losses together
-            loss = loss_policy + 0.5 * loss_value - 0.01 * entropy_bonus
+            loss = loss_policy + 0.5 * loss_value - 0.01 * entropy
 
             #------------------
             # 8. BACKWARD PASS

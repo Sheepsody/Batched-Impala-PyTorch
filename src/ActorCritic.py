@@ -201,7 +201,7 @@ class ActorCritic(nn.Module):
 
         # (seq_len, batch, input_size) formating in-place
         x.unsqueeze_(0)
-        x, _ = self.lstm(x, lstm_hxs)
+        x, lstm_hxs = self.lstm(x, lstm_hxs)
         x.squeeze_(0)
 
         logits = self.logits(x)
@@ -211,4 +211,4 @@ class ActorCritic(nn.Module):
         action = dist.sample()
         log_prob = dist.log_prob(action)
 
-        return action, log_prob
+        return action, log_prob, lstm_hxs

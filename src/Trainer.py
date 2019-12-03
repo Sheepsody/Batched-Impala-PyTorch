@@ -4,7 +4,7 @@ from src.Statistics import SummaryType
 import time
 from queue import Empty
 from src.Trajectory import Trajectory
-from src.VTrace import VTrace
+from src.vtrace import VTrace
 
 # We don't need any locks because of the GIL
 # We can't use the same thing two times

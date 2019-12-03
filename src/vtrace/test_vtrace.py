@@ -26,7 +26,7 @@ class VTraceTest(unittest.TestCase):
         return np.random.randn(np.prod(shape)).astype(np.float32).reshape(*shape)*np.prod(shape)
 
     @staticmethod
-    def _ground_truth_calculation(discount_factor, target_log_rhos, behaviour_log_rhos, rewards, values,
+    def _ground_truth_calculation(discount_factor, target_log_policy, behaviour_log_policy, rewards, values,
                                 bootstrap_value, clip_rho_threshold,
                                 clip_cs_threshold, **kwargs):
         """
@@ -34,9 +34,9 @@ class VTraceTest(unittest.TestCase):
         This is borrowed (and partly changed) from the orinal deepmind code
         """
         vs = []
-        seq_len = len(log_rhos)
+        seq_len = len(target_log_policy)
 
-        importance_sampling = target_log_rhos-behaviour_log_rhos
+        importance_sampling = target_log_policy-behaviour_log_policy
         rhos = np.exp(importance_sampling)
 
         # Truncated importance sampling
@@ -67,13 +67,13 @@ class VTraceTest(unittest.TestCase):
         target_log_rhos = 5 * (self._shaped_arange(seq_len, batch_size) / (batch_size * seq_len) - 0.5)  # [0.0, 1.0) -> [-2.5, 2.5).
         
         values = {
-            'behaviour_log_rhos': behaviour_log_rhos,
-            'target_log_rhos': target_log_rhos,
+            'behaviour_log_policy': behaviour_log_rhos,
+            'target_log_policy': target_log_rhos,
             'discount_factor':
                 0.9,
             'rewards':
                 self._shaped_arange(seq_len, batch_size),
-            'values':
+            'values': # We boostrap with t+1
                 self._shaped_arange(seq_len+1, batch_size) / batch_size,
             'bootstrap_value':
                 self._shaped_arange(batch_size) + 1.0,
@@ -83,19 +83,21 @@ class VTraceTest(unittest.TestCase):
                 1.4,
         }
 
-        vtrace = VTrace(rho=values["clip_rho_threshold"],
-                        cis=values["clip_cs_threshold"], 
-                        discount_factor=values["discount_factor"])
+        vtrace = torch.jit.script(
+            VTrace(rho=values["clip_rho_threshold"],
+                   cis=values["clip_cs_threshold"], 
+                   discount_factor=values["discount_factor"])
+        )
 
-        output_v = vtrace(target_value=torch.tensor(values["values"]), 
-                          rewards=torch.tensor(values["rewards"]), 
-                          target_log_policy=torch.tensor(values["target_log_rhos"]), 
-                          behaviour_log_policy=torch.tensor(values["behaviour_log_rhos"]))
+        output_v, rhos = vtrace(target_value=torch.tensor(values["values"], dtype=float), 
+                          rewards=torch.tensor(values["rewards"], dtype=float), 
+                          target_log_policy=torch.tensor(values["target_log_policy"], dtype=float), 
+                          behaviour_log_policy=torch.tensor(values["behaviour_log_policy"], dtype=float))
+
 
         vs = self._ground_truth_calculation(**values)
-
-        with self.assertRaises(AssertionError):
-            assert_allclose(vs, output_v+1, rtol=1e-04)
+        
+        assert_allclose(vs, output_v, rtol=1e-03)
 
 
 

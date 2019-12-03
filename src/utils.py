@@ -3,7 +3,7 @@ import numpy as np
 import torch
 import cv2
 
-from src.ActorCritic import ActorCritic
+from src.networks.ActorCritic import ActorCritic
 
 
 """

@@ -1,6 +1,11 @@
 import torch
 import torch.nn as nn
 
+try:
+    from typing_extensions import Final
+except:
+    from torch.jit import Final
+
 class VTrace(nn.Module):
     """
     New PyTorch module for computing v-trace as in https://arxiv.org/abs/1802.01561 (IMPALA)
@@ -21,14 +26,18 @@ class VTrace(nn.Module):
     rho and cis are truncated importance sampling weights 
     As in https://arxiv.org/abs/1802.01561 it is assumed that rho >= cis
     """
+    rho: Final[nn.Parameter]
+    cis: Final[nn.Parameter]
+    discount_factor: Final[float]
+
     def __init__(self, discount_factor, rho, cis):
         super(VTrace, self).__init__()
 
         assert rho >= cis, "Truncation levels do not satify the asumption rho >= cis"
 
-        self.rho = torch.tensor(rho, dtype=torch.float).cuda()
-        self.cis = torch.tensor(cis, dtype=torch.float).cuda()
-        self.discount_factor = torch.tensor(discount_factor, dtype=torch.float).cuda()
+        self.rho = nn.Parameter(torch.tensor(rho, dtype=float), requires_grad=False)
+        self.cis = nn.Parameter(torch.tensor(cis, dtype=float), requires_grad=False)
+        self.discount_factor = discount_factor
     
     def forward(self, target_value, rewards, target_log_policy, behaviour_log_policy):
         """
@@ -59,7 +68,7 @@ class VTrace(nn.Module):
         """
         # Pre-defined tensor for v-trace
         size = list(target_value.size())    
-        vtrace = torch.zeros(target_value.size()).cuda()
+        vtrace = torch.zeros(target_value.size())
 
         # Computing importance sampling for truncation levels
         importance_sampling = torch.exp(target_log_policy-behaviour_log_policy)
@@ -70,9 +79,11 @@ class VTrace(nn.Module):
         # Initialisation : v_{-1}
         # v_s = V(x_s) + delta_sV + gamma*c_s(v_{s+1} - V(x_{s+1}))
         vtrace[-1] = target_value[-1] # Bootstrapping
-        for i in reversed(range(size[0]-1)):
+        for j in range(size[0]-1):
+            i = (size[0]-2) - j
             delta = rhos[i] * (rewards[i] + self.discount_factor * target_value[i+1] - target_value[i])
             vtrace[i] = target_value[i] + delta + self.discount_factor * ciss[i] * (vtrace[i+1] - target_value[i+1])
 
         # Don't forget to detach !
-        return vtrace.detach_(), rhos.detach_()
+        # We need to remove the bootstrapping
+        return vtrace[:-1].detach(), rhos.detach()

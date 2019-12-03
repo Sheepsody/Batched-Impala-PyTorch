@@ -1,5 +1,5 @@
 import configparser
-from src.ActorCritic import ActorCritic
+from src.networks.ActorCritic import ActorCritic
 import torch.multiprocessing as mp
 from torch.multiprocessing import Queue, Value
 from src.Statistics import Statistics

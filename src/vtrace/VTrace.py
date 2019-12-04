@@ -19,7 +19,7 @@ class VTrace(nn.Module):
     rho : float
         controls the nature of the value function we converge to
     cis : float
-        controls the speed of convergenec
+        controls the speed of convergence
     
     Notes
     -----
@@ -29,8 +29,9 @@ class VTrace(nn.Module):
     rho: Final[nn.Parameter]
     cis: Final[nn.Parameter]
     discount_factor: Final[float]
+    sequence_length: Final[int]
 
-    def __init__(self, discount_factor, rho, cis):
+    def __init__(self, discount_factor, sequence_length, rho=1.0, cis=1.0):
         super(VTrace, self).__init__()
 
         assert rho >= cis, "Truncation levels do not satify the asumption rho >= cis"
@@ -38,6 +39,7 @@ class VTrace(nn.Module):
         self.rho = nn.Parameter(torch.tensor(rho, dtype=float), requires_grad=False)
         self.cis = nn.Parameter(torch.tensor(cis, dtype=float), requires_grad=False)
         self.discount_factor = discount_factor
+        self.sequence_length = sequence_length
     
     def forward(self, target_value, rewards, target_log_policy, behaviour_log_policy):
         """
@@ -66,24 +68,30 @@ class VTrace(nn.Module):
         (seq_len, batch, ...)
         unittest can be found to test with python, with original tensorflow code       
         """
-        # Pre-defined tensor for v-trace
-        size = list(target_value.size())    
-        vtrace = torch.zeros(target_value.size())
+        assert rewards.size()[0] == self.sequence_length
+
+        # Copy on the same device at the input tensor
+        vtrace = torch.zeros(target_value.size(), device=target_value.device)
 
         # Computing importance sampling for truncation levels
         importance_sampling = torch.exp(target_log_policy-behaviour_log_policy)
-        rhos = torch.min(self.rho, importance_sampling)
+        clipped_rhos = torch.min(self.rho, importance_sampling)
         ciss = torch.min(self.cis, importance_sampling)
 
         # Recursive calculus
         # Initialisation : v_{-1}
         # v_s = V(x_s) + delta_sV + gamma*c_s(v_{s+1} - V(x_{s+1}))
         vtrace[-1] = target_value[-1] # Bootstrapping
-        for j in range(size[0]-1):
-            i = (size[0]-2) - j
-            delta = rhos[i] * (rewards[i] + self.discount_factor * target_value[i+1] - target_value[i])
-            vtrace[i] = target_value[i] + delta + self.discount_factor * ciss[i] * (vtrace[i+1] - target_value[i+1])
+        
+        # Computing the deltas
+        delta = clipped_rhos * (rewards + self.discount_factor * target_value[1:] - target_value[:-1])
+        
+        # Pytorch has no funtion such as tf.scan or theano.scan
+        # This disgusting is compulsory for jit as reverse is not supported
+        for j in range(self.sequence_length):
+            i = (self.sequence_length - 1) - j
+            vtrace[i] = target_value[i] + delta[i] + self.discount_factor * ciss[i] * (vtrace[i+1] - target_value[i+1])
 
         # Don't forget to detach !
         # We need to remove the bootstrapping
-        return vtrace[:-1].detach(), rhos.detach()
+        return vtrace[:-1].detach(), clipped_rhos.detach()

@@ -15,11 +15,6 @@ except:
     from torch.jit import Final
 
 
-# FIXME : hints for the functions
-
-# Why using Torchscript ?
-# nn.Module inheritance
-# More efficient execution
 from enum import Enum
 
 
@@ -125,8 +120,9 @@ class ActorCriticLSTM(nn.Module):
     flatten_dim: Final[int]
     hidden_size: Final[int]
     n_outputs: Final[int]
+    sequence_length: Final[int]
 
-    def __init__(self, h, w, c, n_outputs, body=BodyType.SHALLOW):
+    def __init__(self, h, w, c, n_outputs, sequence_length, body=BodyType.SHALLOW):
         """You can have several types of body as long as they implement the size function"""
         super(ActorCriticLSTM, self).__init__()
 
@@ -134,6 +130,7 @@ class ActorCriticLSTM(nn.Module):
         self.n_outputs = n_outputs
         self.input_size = (c, h, w)
         self.hidden_size = 256
+        self.sequence_length = sequence_length
 
         # Sequential baseblocks
         if body == BodyType.SHALLOW:
@@ -197,17 +194,18 @@ class ActorCriticLSTM(nn.Module):
 
         return action.detach(), log_prob.detach(), lstm_hxs.detach()
 
-    def forward(self, obs, lstm_hxs, reset_mask, behaviour_actions):
+    @torch.jit.export
+    def forward(self, obs, lstm_hxs, mask, behaviour_actions):
         """
         x : (seq, batch, c, h, w)
-        reset_mask : (1, batch, length)
+        mask : (seq, batch)
         lstm_hxs : (1, batch, hidden)*2
         behaviour_actions : (seq, batch, num_actions)
         """
         # Check the dimentions
         assert obs.dim() == 5
         seq, batch, c, h, w = obs.size()
-
+        assert seq==self.sequence_length+1, "Issue with sequence lengths"
 
         # 1. EFFICIENT COMPUTATION ON CNNs (time is folded with batch size)
 
@@ -217,19 +215,22 @@ class ActorCriticLSTM(nn.Module):
 
         # 2. LSTM LOOP (same length events but can be resetted)
         
+        mask = mask.unsqueeze(1)
+
         x = x.unsqueeze(1) # (seq_len, 1, batch, input)
         x_lstm = []
 
-        for i in range(seq):
+        for i in range(self.sequence_length+1):
             # One step pass of lstm
             result, lstm_hxs = self.model.lstm(x[i], lstm_hxs)
 
             # Zero lstm states is resetted
-            lstm_hxs = [(reset_mask[:, :, i]*state) for state in lstm_hxs]
+            for state in lstm_hxs:
+                state = mask[i] * state
             
             x_lstm.append(result)
 
-        x = torch.cat(tensors=x_lstm, dim=0) # (seq_len, batch, input)
+        x = torch.stack(tensors=x_lstm, dim=0) # (seq_len, batch, input)
         
 
         x = x.view(seq * batch, self.flatten_dim)

@@ -1,12 +1,13 @@
 import configparser
-from src.networks.ActorCritic import ActorCritic
+from Impala import Impala
+from src.networks.ActorCritic import ActorCriticLSTM
 import torch.multiprocessing as mp
 from torch.multiprocessing import Queue, Value
 from src.Statistics import Statistics
 from torch.multiprocessing import Process
 from src.Trainer import Trainer
+from src.Predictor import Predictor
 from src.Agent import Agent
-from src.Callback import StateCallback
 import torch.optim as optim
 from ctypes import c_bool
 from threading import Thread
@@ -15,15 +16,11 @@ import torch
 import os
 
 
-# TODO in main set start method as fork server ! Before calling any cuda operation
-
-
 class Manager(Thread):
     
     def __init__(self, config_file):
         
         super(Manager, self).__init__()
-        # TODO Add maps directory
         # Setting it as daemon child
         self.daemon = True
 
@@ -34,8 +31,10 @@ class Manager(Thread):
         self.config.read(config_file)
 
         # Initializing the device
-        self.device = torch.device('cuda') if self.config["settings"]["device"] == "cuda" \
-            else torch.device('cpu')
+        if self.config["settings"]["device"] == "cuda":
+            assert torch.cuda.is_available()
+        self.device = self.config["settings"]["device"]
+        self.agent_device = "cuda"
 
         # Test and training sets
         self.train_set, self.test_set = [], []
@@ -45,10 +44,46 @@ class Manager(Thread):
             elif value == "test" :
                 self.test_set.append(key)
         
+        # Creating the environnement generation function
+        make_env, n_outputs = generate_make(
+            game='SuperMarioKart-Snes',
+            state='MarioCircuit.Act1',
+            nb_stack=self.config["environnement"]["channels"]
+        )
+
+        # Impala constants
+        self.sequence_length = int(self.config["impala"]["sequence_length"])
+        self.rho = int(self.config["impala"]["rho"])
+        self.cis = int(self.config["impala"]["cis"])
+        self.discount_factor = int(self.config["impala"]["discount_factor"])
+        self.entropy_coef = int(self.config["impala"]["entropy_coef"])
+        self.value_coef = int(self.config["impala"]["value_coef"])
+
         # Building the model and share it (cf torch.multiprocessing best practices)
-        self.model = ActorCritic(56, 128, 1, 9).float().to(self.device)
+        self.model = torch.jit.script(
+            ActorCriticLSTM(
+                c = self.config["environnement"]["channels"],
+                h = self.config["environnement"]["height"],
+                w = self.config["environnement"]["width"],
+                n_outputs = n_outputs
+            ).float()
+        ).to(self.device)
+
+        # To have a multi-machine-case, just place on different devices and sync the models once a while
+        self.impala = torch.jit.script(Impala(
+            sequence_length=self.sequence_length,
+            entropy_coef=self.entropy_coef,
+            value_coef=self.value_coef,
+            discount_factor=self.discount_factor,
+            model=self.model,
+            rho=self.rho, 
+            cis=self.cis,
+            device=self.device
+        ))
+
         # Sharing memory between processes
         self.model.share_memory()
+        self.impala.share_memory()
 
         # Building the optimizer
         self.optimizer = optim.RMSprop(self.model.parameters(),
@@ -59,14 +94,12 @@ class Manager(Thread):
                                 weight_decay=float(self.config["optimizer"]["weight_decay"]),
                                 centered=self.config["optimizer"]["centered"]=="True")
 
-        # Directory to save infos
+        # Checkpoints directory
         self.checkpoint_path = self.config["settings"]["checkpoint_path"]
-        self.callbacks = [int(num) for num in self.config["settings"]["callbacks"].split(",")]
-        self.records_folder = self.config["settings"]["records_folder"]
-        os.makedirs(self.records_folder, exist_ok=True)
 
         # Building the torch.multiprocessing-queues
         self.training_queue = Queue(maxsize=int(self.config["settings"]["training_queue"]))
+        self.prediction_queue = Queue(maxsize=int(self.config["settings"]["prediction_queue"]))
         self.statistics_queue = Queue()
 
         # Building the torch.multiprocessing-values
@@ -85,6 +118,8 @@ class Manager(Thread):
         # Agents, predictions and learners
         self.training_batch_size = int(self.config["settings"]["training_batch_size"])
         self.trainers = []
+        self.prediction_batch_size = int(self.config["settings"]["prediction_batch_size"])
+        self.predictors = []
         self.agents = []
 
         # Adding the threads and agents
@@ -94,18 +129,17 @@ class Manager(Thread):
     def add_agents(self, nb):
         old_length = len(self.agents)
         for index in range(old_length, old_length+nb):
-            # Generating the agent's model
-            actor_critic = ActorCritic(56, 128, 1, 9).float().to(self.device)
-
             self.agents.append(Agent(
                 id_=index,
-                target_policy=self.model,
-                behaviour_policy=actor_critic,
+                prediction_queue=self.prediction_queue,
                 training_queue=self.training_queue,
                 states=self.train_set,
                 exit_flag=Value(c_bool, False),
                 statistics_queue=self.statistics_queue,
-                episode_counter=self.nb_episodes))
+                episode_counter=self.nb_episodes,
+                device=self.agent_device
+                step_max=self.sequence_length
+            ))
 
     def add_trainers(self, nb):
         old_length = len(self.trainers)
@@ -114,10 +148,25 @@ class Manager(Thread):
                 id_=index,
                 training_queue=self.training_queue,
                 batch_size=self.training_batch_size,
-                model=self.model,
+                model=self.impala,
                 optimizer=self.optimizer,
                 statistics_queue=self.statistics_queue,
-                learning_step=self.learning_step))
+                learning_step=self.learning_step
+            ))
+    
+    def add_predictors(self, nb):
+        old_length = len(self.predictors)
+        for index in range(old_length, old_length+nb):
+            self.predictors.append(Predictor(
+                id_=index,
+                prediction_queue=self.prediction_queue,
+                agents=self.agents,
+                batch_size=self.prediction_batch_size,
+                model=self.impala,
+                statistics_queue=self.statistics_queue,
+                device=self.device,
+                agent_device=self.agent_device
+            ))
 
     def remove_agents(self, nb):
         # Removes the nb last agents
@@ -134,16 +183,21 @@ class Manager(Thread):
         self.trainers[-1].exit = True
         self.trainers[-1].join()
         self.trainers.pop()
+    
+    def remove_predictor(self):
+        self.predictors[-1].exit = True
+        self.predictors[-1].join()
+        self.predictors.pop()
 
     def remove_statistics(self):
-        self.trainers[-1].exit = True
-        self.trainers[-1].join()
-        self.trainers.pop()
+        self.statistics[-1].exit = True
+        self.statistics[-1].join()
+        self.statistics.pop()
 
     def save_model(self):
         torch.save({
             'epoch': self.nb_episodes.value,
-            'model_state_dict': self.model.state_dict(),
+            'model_state_dict': self.impala.get_model_state_dict(),
             'optimizer_state_dict': self.optimizer.state_dict()
         }, self.config["settings"]["checkpoint_path"])
 
@@ -153,41 +207,24 @@ class Manager(Thread):
 
         # Strating the threads and processes
         self.statistics.start()
+
         [agent.start() for agent in self.agents]
         [trainer.start() for trainer in self.trainers]
-        callback_process = []
-
-        # TODO push the model to the tensorboard
+        [predictor.start() for predictor in self.predictors]
 
         # Loop
         while self.nb_episodes.value < self.max_nb_steps :
-
-            # TODO add param for that
-            # time.sleep(2*60)
-
+            time.sleep(2*60)
             self.save_model()
 
-            # Check for callbacks
-            if self.callbacks[0] < self.nb_episodes.value:
-                # Pop the corresponding step
-                self.callbacks.pop(0)
-
-                # Create and run a callback
-                # callback = StateCallback(checkpoint_path=self.checkpoint_path, 
-                #                          step=self.nb_episodes.value, 
-                #                          records_folder=self.records_folder, 
-                #                          train_set=self.train_set, 
-                #                          test_set=self.test_set,
-                #                          statistics_queue=self.statistics_queue)
-                # callback.start()
-                # callback_process.append(callback)
+        # Marking the agent as stop
+        for agent in self.agents:
+            agent.exit_flag.value = True
 
         # Stopping all the threads        
-        for thread in [*self.trainers, self.statistics]:
+        for thread in [*self.trainers, *self.predictors, self.statistics]:
             thread.exit = True
             thread.join()
 
-        # At last, checking the callbacks (they run on CPU)
-        while callback_process:
-            callback_process[-1].join()
-            callback_process.pop()
+        for agent in self.agents:
+            agent.join()

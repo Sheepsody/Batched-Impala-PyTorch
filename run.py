@@ -5,10 +5,6 @@ import argparse
 from src.Manager import Manager
 
 
-print(f"PyTorch version {torch.__version__}")
-print(f"Number of CPU {cpu_count()}")
-print(f"Cuda enabled device {torch.cuda.is_available()}")
-
 # The fork method has to be setted in the main method, before any CUDA call
 if __name__ == "__main__":
 
@@ -20,6 +16,11 @@ if __name__ == "__main__":
         pass
 
 
+torch.autograd.set_detect_anomaly(True)
+
+print(f"PyTorch version {torch.__version__}")
+print(f"Number of CPU {cpu_count()}")
+print(f"Cuda enabled device {torch.cuda.is_available()}")
 
 parser = argparse.ArgumentParser()
 

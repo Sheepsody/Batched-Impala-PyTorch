@@ -26,12 +26,17 @@ class VTraceTest(unittest.TestCase):
         return np.random.randn(np.prod(shape)).astype(np.float32).reshape(*shape)*np.prod(shape)
 
     @staticmethod
-    def _ground_truth_calculation(discount_factor, target_log_policy, behaviour_log_policy, rewards, values,
-                                bootstrap_value, clip_rho_threshold,
-                                clip_cs_threshold, **kwargs):
+    def _ground_truth_calculation(discount_factor,
+                                  target_log_policy,
+                                  behaviour_log_policy,
+                                  rewards, 
+                                  target_value,
+                                  clip_rho_threshold,
+                                  clip_cs_threshold):
         """
         Calculates the ground truth for V-trace in Python/Numpy.
         This is borrowed (and partly changed) from the orinal deepmind code
+        Values is already bootstrap with next state's prediction
         """
         vs = []
         seq_len = len(target_log_policy)
@@ -45,17 +50,18 @@ class VTraceTest(unittest.TestCase):
 
         # Inefficient method close to the iterative formulation
         for s in range(seq_len):
-            v_s = np.copy(values[s])  # Very important copy.
+            v_s = np.copy(target_value[s])  # Very important copy.
             for t in range(s, seq_len):
                 v_s += (
                     pow(discount_factor, t-s) *
                     np.prod(cs[s:t], axis=0) * clipped_rhos[t] *
-                    (rewards[t] + discount_factor * values[t + 1] - values[t]))  
+                    (rewards[t] + discount_factor * target_value[t + 1] - target_value[t]))  
             vs.append(v_s)
         vs = np.stack(vs, axis=0)
         return vs
 
-    def test_vtrace(self):
+
+    def test_vtrace(self, device="cuda"):
         """Tests V-trace against ground truth data calculated in python."""
         seq_len = 5
         batch_size = 6
@@ -73,10 +79,8 @@ class VTraceTest(unittest.TestCase):
                 0.9,
             'rewards':
                 self._shaped_arange(seq_len, batch_size),
-            'values': # We boostrap with t+1
+            'target_value': # We boostrap with t+1
                 self._shaped_arange(seq_len+1, batch_size) / batch_size,
-            'bootstrap_value':
-                self._shaped_arange(batch_size) + 1.0,
             'clip_rho_threshold':
                 3.7,
             'clip_cs_threshold':
@@ -86,18 +90,20 @@ class VTraceTest(unittest.TestCase):
         vtrace = torch.jit.script(
             VTrace(rho=values["clip_rho_threshold"],
                    cis=values["clip_cs_threshold"], 
-                   discount_factor=values["discount_factor"])
+                   discount_factor=values["discount_factor"],
+                   sequence_length=seq_len)
         )
+        vtrace.to(device)
 
-        output_v, rhos = vtrace(target_value=torch.tensor(values["values"], dtype=float), 
-                          rewards=torch.tensor(values["rewards"], dtype=float), 
-                          target_log_policy=torch.tensor(values["target_log_policy"], dtype=float), 
-                          behaviour_log_policy=torch.tensor(values["behaviour_log_policy"], dtype=float))
+        output_v, rhos = vtrace(target_value=torch.tensor(values["target_value"], dtype=float, device=device), 
+                          rewards=torch.tensor(values["rewards"], dtype=float, device=device), 
+                          target_log_policy=torch.tensor(values["target_log_policy"], dtype=float, device=device), 
+                          behaviour_log_policy=torch.tensor(values["behaviour_log_policy"], dtype=float, device=device))
 
 
         vs = self._ground_truth_calculation(**values)
         
-        assert_allclose(vs, output_v, rtol=1e-03)
+        assert_allclose(vs, output_v.cpu(), rtol=1e-03)
 
 
 

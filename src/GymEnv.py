@@ -10,23 +10,24 @@ import cv2
 
 from gym.wrappers import FrameStack
 
-# TODO : Function factory ?
-def make_env(scale_rew=False, game='SuperMarioKart-Snes', state='MarioCircuit.Act1', nb_stack=5):
-    """
-    Create an environment with some standard wrappers.
-    """
-    # TODO define as a pipeline ? 
-    env = retro.make(game=game,
-                     use_restricted_actions=retro.Actions.ALL,
-                     state=state)
-    env = KartMultiDiscretizer(env)
-    env = KartObservation(env)
-    # env = FrameStack(env, num_stack=nb_stack)
-    # Careful, this has to be done after the stack
-    env = KartSkipper(env, skip=5)
-    # Has to be done after skipper
-    env = KartReward(env)
-    return env
+
+def generate_make(game='SuperMarioKart-Snes', state='MarioCircuit.Act1', nb_stack=5):
+    """Generates the function to create the environnements, returns the output size"""
+    
+    def make_env():
+        env = retro.make(game=game,
+                        use_restricted_actions=retro.Actions.ALL,
+                        state=state)
+        env = KartMultiDiscretizer(env)
+        env = KartObservation(env)
+        env = FrameStack(env, num_stack=nb_stack)
+        # Careful, this has to be done after the stack
+        env = KartSkipper(env, skip=5)
+        # Has to be done after skipper
+        env = KartReward(env)
+        return env
+    
+    return make_env, len(KartMultiDiscretizer.discretized_actions)
 
 
 class KartObservation(gym.ObservationWrapper):
@@ -65,31 +66,31 @@ class KartMultiDiscretizer(gym.ActionWrapper):
         4. Use item (A)
         5. Change view (X)
     """
+    # Discretized action space
+    discretized_actions = [
+        [], # No action is made
+        # ["A"] if objects allowed
+        ["LEFT"],
+        ["RIGHT"],
+        ["LEFT", "B"],
+        ["RIGHT", "B"],
+        ["LEFT", "Y"],
+        ["RIGHT", "Y"],
+        ["LEFT", "B", "L"], # Power slides
+        ["RIGHT", "B", "L"]
+    ]
+
     def __init__(self, env):
         super(KartMultiDiscretizer, self).__init__(env)
-
-        # Discretized action space
-        discretized_actions = [
-            [], # No action is made
-            # ["A"] if objects allowed
-            ["LEFT"],
-            ["RIGHT"],
-            ["LEFT", "B"],
-            ["RIGHT", "B"],
-            ["LEFT", "Y"],
-            ["RIGHT", "Y"],
-            ["LEFT", "B", "L"], # Power slides
-            ["RIGHT", "B", "L"]
-        ]
 
         # The map of buttons on snes
         buttons = ["B", "Y", "SELECT", "START", "UP", "DOWN", "LEFT", "RIGHT", "A", "X", "L", "R"]
 
         # List of equivalents in the Binary format
         self._actions = []
-        self.nb_actions = len(discretized_actions)
+        self.nb_actions = len(KartMultiDiscretizer.discretized_actions)
 
-        for action in discretized_actions:
+        for action in KartMultiDiscretizer.discretized_actions:
             arr = np.array([False] * len(buttons))
             for button in action:
                 arr[buttons.index(button)] = True

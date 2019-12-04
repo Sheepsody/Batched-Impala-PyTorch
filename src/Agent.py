@@ -4,15 +4,12 @@ import numpy as np
 from torch.multiprocessing import Queue, Process
 from src.GymEnv import make_env
 from src.Statistics import SummaryType
-import torchvision.transforms as T
-from src.Trajectory import Trajectory, AgentMemory
-
-
 import torch
+from collections import namedtuple
+
+import torchvision.transforms as T
 
 import time
-
-
 
 
 class Agent(Process):   
@@ -24,8 +21,7 @@ class Agent(Process):
 
     def __init__(self, 
                  id_, 
-                 behaviour_policy, 
-                 target_policy, 
+                 prediction_queue,
                  training_queue, 
                  states, 
                  exit_flag, 
@@ -45,11 +41,8 @@ class Agent(Process):
 
         self.device = device
 
-        # Policy followed by the actor during n-steps trajectory
-        self.behaviour_policy = behaviour_policy
-        self.behaviour_policy.to(self.device)
-        # Policy that is being updated
-        self.target_policy = target_policy
+        # Prediction queue to send the actions to
+        self.prediction_queue = prediction_queue
 
         self.training_queue = training_queue
         self.stats_queue = statistics_queue
@@ -102,18 +95,18 @@ class Agent(Process):
 
             obs_tensor = torch.tensor(obs, dtype=torch.float) \
                 .unsqueeze_(0) \
-                .unsqueeze_(0) \
                 .to(self.device)
 
-            # Asynchronous prediction
-            action, log_prob, lstm_hxs = self.behaviour_policy.act(obs_tensor, lstm_hxs)
+            # Sending to predictor
+            self.prediction_queue.put((self.id, obs_tensor, lstm_hxs))
+            action, log_prob, lstm_hxs = self.action_queue.get()
 
             # Receive reward and new state           
             obs, reward, done, info = self.env.step(int(action.item()))
 
             # Update the trajectory with the latest step
             self.memory.append_(
-                observation=obs_tensor.squeeze_(0), 
+                observation=obs_tensor, 
                 action=action, 
                 reward=torch.tensor(reward),
                 log_prob=log_prob,
@@ -135,11 +128,6 @@ class Agent(Process):
 
                 # Reinialize for next step
                 step = 0
-
-                # Updating the model with the latest weights
-                self.behaviour_policy.load_state_dict(self.target_policy.state_dict())
-                # The model is only used for inferencing
-                self.behaviour_policy.eval()     
 
             # The step counter is placed here because of the first iteration
             # Coincides with the "length" of the trajectory buffer
@@ -170,3 +158,80 @@ class Agent(Process):
         # The background process must be alive for the Trainer
         # Tensors are passed as reference in pytorch
         time.sleep(1)
+
+
+Trajectory = namedtuple(
+    "Trajectory",
+    [
+        'length', 
+        'observations',
+        'actions',
+        'rewards',
+        'log_probs',
+        'done',
+        'lstm_initial_hidden',
+        'lstm_initial_cell'
+    ]
+)
+
+class AgentMemory(object):
+    """
+    Object to store the trajectories in an optimized way
+    """
+    def __init__(self, num_steps, observation_shape, lstm_hidden_size, action_space):
+        self.observations = torch.zeros(1+num_steps, *observation_shape)
+        self.lstm_initial_hidden = torch.zeros(1, 1, lstm_hidden_size)
+        self.lstm_initial_cell = torch.zeros(1, 1, lstm_hidden_size)
+        self.actions = torch.zeros(1+num_steps, 1)
+        self.rewards = torch.zeros(1+num_steps, 1)
+        self.log_probs = torch.zeros(1+num_steps, 1)
+        self.done = torch.zeros(1+num_steps, 1)
+        self.step = 0
+    
+    def to(self, device):
+        self.observations.to(device)
+        self.lstm_initial_hidden.to(device)
+        self.lstm_initial_cell.to(device)
+        self.actions.to(device)
+        self.rewards.to(device)
+        self.log_probs.to(device)
+        self.done.to(device)
+    
+    # Inplace operation
+    def append_(self, observation, action, reward, log_prob, done):
+        self.observations[self.step].copy_(observation)
+        self.actions[self.step].copy_(action)
+        self.rewards[self.step].copy_(reward)
+        self.log_probs[self.step].copy_(log_prob)
+        self.done[self.step].copy_(done)
+        self.step += 1
+    
+    def reset(self, initial_lstm_state):
+        # No need to zero the tensors
+        self.observations[0].copy_(self.observations[-1])
+        self.lstm_initial_hidden.copy_(initial_lstm_state[0])
+        self.lstm_initial_cell.copy_(initial_lstm_state[1])
+        self.actions[0].copy_(self.actions[-1])
+        self.rewards[0].copy_(self.rewards[-1])
+        self.log_probs[0].copy_(self.log_probs[-1])
+        self.done[0].copy_(self.done[-1])
+        # Length of the current trajectory
+        self.step = 1
+    
+    def enqueue(self, device=torch.device("cuda")):
+        # Detach ? -> deletes the grad_fn attribute
+        # Detach makes sure that we don't record the history of our tensor, not to backprop
+        # This should already be done by detach but let's keep things safe !
+        return Trajectory(
+            length = self.step, 
+            # Sequence and bootstrapping
+            observations = self.observations[:self.step].clone().to(device),
+            actions = self.actions[:self.step].clone().to(device),
+            done = self.done[:self.step].clone().to(device),
+            # Full sequence
+            rewards = self.rewards[:self.step-1].clone().to(device), 
+            log_probs = self.log_probs[:self.step-1].clone().to(device), 
+            # Initial hidden states
+            lstm_initial_hidden = self.lstm_initial_hidden.clone().to(device),
+            lstm_initial_cell = self.lstm_initial_cell.clone().to(device)
+        )

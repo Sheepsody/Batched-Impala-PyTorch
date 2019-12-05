@@ -1,5 +1,5 @@
 import configparser
-from Impala import Impala
+from src.IMPALA import Impala
 from src.networks.ActorCritic import ActorCriticLSTM
 import torch.multiprocessing as mp
 from torch.multiprocessing import Queue, Value
@@ -14,6 +14,7 @@ from threading import Thread
 import time
 import torch
 import os
+from src.GymEnv import KartMultiDiscretizer
 
 
 class Manager(Thread):
@@ -43,29 +44,31 @@ class Manager(Thread):
                 self.train_set.append(key)
             elif value == "test" :
                 self.test_set.append(key)
+
+        # Dimensions of the view
+        self.channels = int(self.config["environnement"]["stacks"])
+        self.height = int(self.config["environnement"]["height"])
+        self.width = int(self.config["environnement"]["width"])
         
         # Creating the environnement generation function
-        make_env, n_outputs = generate_make(
-            game='SuperMarioKart-Snes',
-            state='MarioCircuit.Act1',
-            nb_stack=self.config["environnement"]["channels"]
-        )
+        self.n_outputs = len(KartMultiDiscretizer.discretized_actions)
 
         # Impala constants
         self.sequence_length = int(self.config["impala"]["sequence_length"])
-        self.rho = int(self.config["impala"]["rho"])
-        self.cis = int(self.config["impala"]["cis"])
-        self.discount_factor = int(self.config["impala"]["discount_factor"])
-        self.entropy_coef = int(self.config["impala"]["entropy_coef"])
-        self.value_coef = int(self.config["impala"]["value_coef"])
+        self.rho = float(self.config["impala"]["rho"])
+        self.cis = float(self.config["impala"]["cis"])
+        self.discount_factor = float(self.config["impala"]["discount_factor"])
+        self.entropy_coef = float(self.config["impala"]["entropy_coef"])
+        self.value_coef = float(self.config["impala"]["value_coef"])
 
         # Building the model and share it (cf torch.multiprocessing best practices)
         self.model = torch.jit.script(
             ActorCriticLSTM(
-                c = self.config["environnement"]["channels"],
-                h = self.config["environnement"]["height"],
-                w = self.config["environnement"]["width"],
-                n_outputs = n_outputs
+                c = self.channels,
+                h = self.height,
+                w = self.width,
+                n_outputs = self.n_outputs,
+                sequence_length=self.sequence_length
             ).float()
         ).to(self.device)
 
@@ -125,6 +128,7 @@ class Manager(Thread):
         # Adding the threads and agents
         self.add_trainers(int(self.config["settings"]["trainers"]))
         self.add_agents(int(self.config["settings"]["agents"]))
+        self.add_predictors(int(self.config["settings"]["predictors"]))
 
     def add_agents(self, nb):
         old_length = len(self.agents)
@@ -137,7 +141,9 @@ class Manager(Thread):
                 exit_flag=Value(c_bool, False),
                 statistics_queue=self.statistics_queue,
                 episode_counter=self.nb_episodes,
-                device=self.agent_device
+                observation_shape=(self.channels, self.height, self.width),
+                action_space=self.n_outputs,
+                device=self.agent_device,
                 step_max=self.sequence_length
             ))
 
@@ -151,7 +157,8 @@ class Manager(Thread):
                 model=self.impala,
                 optimizer=self.optimizer,
                 statistics_queue=self.statistics_queue,
-                learning_step=self.learning_step
+                learning_step=self.learning_step,
+                sequence_length=self.sequence_length
             ))
     
     def add_predictors(self, nb):
@@ -164,8 +171,7 @@ class Manager(Thread):
                 batch_size=self.prediction_batch_size,
                 model=self.impala,
                 statistics_queue=self.statistics_queue,
-                device=self.device,
-                agent_device=self.agent_device
+                device=self.device
             ))
 
     def remove_agents(self, nb):
@@ -190,9 +196,7 @@ class Manager(Thread):
         self.predictors.pop()
 
     def remove_statistics(self):
-        self.statistics[-1].exit = True
-        self.statistics[-1].join()
-        self.statistics.pop()
+        self.statistics.join()
 
     def save_model(self):
         torch.save({

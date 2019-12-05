@@ -26,18 +26,20 @@ class VTrace(nn.Module):
     rho and cis are truncated importance sampling weights 
     As in https://arxiv.org/abs/1802.01561 it is assumed that rho >= cis
     """
-    rho: Final[nn.Parameter]
-    cis: Final[nn.Parameter]
-    discount_factor: Final[float]
-    sequence_length: Final[int]
+    __constants__ = [
+        'rho',
+        'cis',
+        'discount_factor',
+        'sequence_length'
+    ]
 
     def __init__(self, discount_factor, sequence_length, rho=1.0, cis=1.0):
         super(VTrace, self).__init__()
 
         assert rho >= cis, "Truncation levels do not satify the asumption rho >= cis"
 
-        self.rho = nn.Parameter(torch.tensor(rho, dtype=float), requires_grad=False)
-        self.cis = nn.Parameter(torch.tensor(cis, dtype=float), requires_grad=False)
+        self.rho = nn.Parameter(torch.tensor(rho, dtype=torch.float), requires_grad=False)
+        self.cis = nn.Parameter(torch.tensor(cis, dtype=torch.float), requires_grad=False)
         self.discount_factor = discount_factor
         self.sequence_length = sequence_length
     
@@ -94,4 +96,4 @@ class VTrace(nn.Module):
 
         # Don't forget to detach !
         # We need to remove the bootstrapping
-        return vtrace[:-1].detach(), clipped_rhos.detach()
+        return vtrace.detach(), clipped_rhos.detach()

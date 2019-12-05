@@ -10,7 +10,8 @@ def _output_size_conv2d(conv, size):
     Computes the output size of the convolution for an input size
     """
     o_size = np.array(size) +  2*np.array(conv.padding)
-    o_size -= np.array(conv.dilation) * (np.array(conv.kernel_size) - 1) - 1
+    o_size -= np.array(conv.dilation) * (np.array(conv.kernel_size) - 1) 
+    o_size -= 1
     o_size = o_size / np.array(conv.stride) + 1
     return np.floor(o_size)
 
@@ -110,7 +111,7 @@ class ShallowConv(nn.Module):
     Shallow model that uses only 3 convolutions
     """
     def __init__(self, c):
-        super(ShallowConv, self).__init__(self)
+        super(ShallowConv, self).__init__()
 
         self.conv1 = nn.Conv2d(in_channels=c,
                                out_channels=16,

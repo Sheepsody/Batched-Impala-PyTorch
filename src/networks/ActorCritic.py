@@ -7,12 +7,9 @@ import numpy as np
 # Import predefined networks
 from src.networks.utils import *
 
-from typing import Dict
+from typing import Dict, Tuple
 
-try:
-    from typing_extensions import Final
-except:
-    from torch.jit import Final
+from torch.jit import Final
 
 
 from enum import Enum
@@ -24,9 +21,11 @@ class BodyType(Enum):
 
 
 class ActorCritic(nn.Module):
-    flatten_dim: Final[int]
-    hidden_size: Final[int]
-    n_outputs: Final[int]
+    __constants__ = [
+        "flatten_dim",
+        "hidden_size",
+        "n_outputs"
+    ]
 
     def __init__(self, h, w, c, n_outputs, body=BodyType.SHALLOW):
         """You can have several types of body as long as they implement the size function"""
@@ -117,10 +116,12 @@ class ActorCritic(nn.Module):
 
 
 class ActorCriticLSTM(nn.Module):
-    flatten_dim: Final[int]
-    hidden_size: Final[int]
-    n_outputs: Final[int]
-    sequence_length: Final[int]
+    __constants__ = [
+        "flatten_dim",
+        "hidden_size",
+        "n_outputs",
+        "sequence_length"
+    ]
 
     def __init__(self, h, w, c, n_outputs, sequence_length, body=BodyType.SHALLOW):
         """You can have several types of body as long as they implement the size function"""
@@ -140,7 +141,8 @@ class ActorCriticLSTM(nn.Module):
         else :
             raise AttributeError("The body type is not valid")
 
-        self.flatten_dim = self.convs.output_size(h, w)*32
+        conv_out = self.convs.output_size((h, w))
+        self.flatten_dim = int(32*conv_out[0]*conv_out[1])
 
         # Fully connected layers
         self.flatten = Flatten()
@@ -175,27 +177,36 @@ class ActorCriticLSTM(nn.Module):
         self.dist = Categorical
 
     @torch.jit.export
-    def act(self, obs, lstm_hxs):
+    def act(self, obs, lstm_hxs : Tuple[torch.Tensor, torch.Tensor]):
         """Performs an one-step prediction with detached gradients"""
         # x : (batch, input_size)
         x = self.body.forward(obs)
 
         x = x.unsqueeze(0)
         # x : (1, batch, input_size)
+        
         x, lstm_hxs = self.lstm(x, lstm_hxs)
         x = x.squeeze(0)
 
         logits = self.logits(x)
 
-        dist = self.dist(logits=logits)
+        action, log_prob = self._act_dist(logits)
 
+        lstm_hxs[0].detach_()
+        lstm_hxs[1].detach_()
+
+        return action.detach(), log_prob.detach(), lstm_hxs
+    
+    @torch.jit.ignore
+    def _act_dist(self, logits : torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
+        dist = self.dist(logits=logits)
+        
         action = dist.sample()
         log_prob = dist.log_prob(action)
 
-        return action.detach(), log_prob.detach(), lstm_hxs.detach()
+        return action, log_prob
 
-    @torch.jit.export
-    def forward(self, obs, lstm_hxs, mask, behaviour_actions):
+    def forward(self, obs, lstm_hxs : Tuple[torch.Tensor, torch.Tensor], mask, behaviour_actions):
         """
         x : (seq, batch, c, h, w)
         mask : (seq, batch)
@@ -203,15 +214,13 @@ class ActorCriticLSTM(nn.Module):
         behaviour_actions : (seq, batch, num_actions)
         """
         # Check the dimentions
-        assert obs.dim() == 5
         seq, batch, c, h, w = obs.size()
-        assert seq==self.sequence_length+1, "Issue with sequence lengths"
 
         # 1. EFFICIENT COMPUTATION ON CNNs (time is folded with batch size)
 
         obs = obs.view(seq * batch, c, h, w)
         x = self.body.forward(obs)
-        x = x.view(seq, batch, self.flatten_dim)
+        x = x.view(seq, batch, self.hidden_size)
 
         # 2. LSTM LOOP (same length events but can be resetted)
         
@@ -222,28 +231,35 @@ class ActorCriticLSTM(nn.Module):
 
         for i in range(self.sequence_length+1):
             # One step pass of lstm
-            result, lstm_hxs = self.model.lstm(x[i], lstm_hxs)
+            result, lstm_hxs = self.lstm(x[i], lstm_hxs)
 
             # Zero lstm states is resetted
             for state in lstm_hxs:
                 state = mask[i] * state
-            
+                
             x_lstm.append(result)
 
         x = torch.stack(tensors=x_lstm, dim=0) # (seq_len, batch, input)
         
 
-        x = x.view(seq * batch, self.flatten_dim)
-        behaviour_actions = x.view(seq * batch, self.n_outputs)
+        x = x.view(seq * batch, self.hidden_size)
+        behaviour_actions = behaviour_actions.view(seq * batch) # Shape for dist
 
         target_value = self.value(x)
         logits = self.logits(x)
-        dist = self.dist(logits=logits)
-        target_log_probs = dist.log_prob(behaviour_actions) 
-        target_entropy = dist.entropy()
+
+        target_log_probs, target_entropy = \
+            self._forward_dist(target_value, logits, behaviour_actions)
 
         target_log_probs = target_log_probs.view(seq, batch, 1)
         target_entropy = target_entropy.view(seq, batch, 1)
         target_value = target_value.view(seq, batch, 1)
 
         return target_log_probs, target_entropy, target_value
+    
+    @torch.jit.ignore
+    def _forward_dist(self, value, logits, behaviour_actions):
+        dist = self.dist(logits=logits)
+        target_log_probs = dist.log_prob(behaviour_actions) 
+        target_entropy = dist.entropy()
+        return target_log_probs, target_entropy

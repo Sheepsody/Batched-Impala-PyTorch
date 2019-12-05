@@ -11,23 +11,20 @@ import cv2
 from gym.wrappers import FrameStack
 
 
-def generate_make(game='SuperMarioKart-Snes', state='MarioCircuit.Act1', nb_stack=5):
-    """Generates the function to create the environnements, returns the output size"""
-    
-    def make_env():
-        env = retro.make(game=game,
-                        use_restricted_actions=retro.Actions.ALL,
-                        state=state)
-        env = KartMultiDiscretizer(env)
-        env = KartObservation(env)
-        env = FrameStack(env, num_stack=nb_stack)
-        # Careful, this has to be done after the stack
-        env = KartSkipper(env, skip=5)
-        # Has to be done after skipper
-        env = KartReward(env)
-        return env
-    
-    return make_env, len(KartMultiDiscretizer.discretized_actions)
+def make_env(state, stacks, size, game='SuperMarioKart-Snes'):
+    env = retro.make(
+        game=game,
+        use_restricted_actions=retro.Actions.ALL,
+        state=state
+    )
+    env = KartMultiDiscretizer(env)
+    env = KartObservation(env, size=size)
+    env = FrameStack(env, num_stack=stacks)
+    # Careful, this has to be done after the stack
+    env = KartSkipper(env, skip=5)
+    # Has to be done after skipper
+    env = KartReward(env)
+    return env
 
 
 class KartObservation(gym.ObservationWrapper):

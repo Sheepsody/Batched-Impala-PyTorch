@@ -3,6 +3,8 @@ import torch.nn as nn
 
 from src.vtrace.VTrace import VTrace
 
+from typing import Tuple, Dict
+
 try:
     from typing_extensions import Final
 except:
@@ -11,9 +13,14 @@ except:
 
 class Impala(nn.Module):
     # Can be constants
-    entropy_coef : Final[float]
-    value_coef : Final[float]
-    discount_factor : Final[float]
+    __constants__ = [
+        'entropy_coef',
+        'value_coef',
+        'discount_factor'
+    ]
+    # entropy_coef : Final[float]
+    # value_coef : Final[float]
+    # discount_factor : Final[float]
     
     def __init__(self, sequence_length, entropy_coef, value_coef, discount_factor, model, rho=1.0, cis=1.0, device="cuda"):
         super(Impala, self).__init__()
@@ -24,6 +31,7 @@ class Impala(nn.Module):
 
         self.entropy_coef = entropy_coef
         self.value_coef = value_coef
+        self.discount_factor = discount_factor
 
         self.sequence_length = sequence_length
 
@@ -43,14 +51,15 @@ class Impala(nn.Module):
     def get_model_state_dict(self):
         return self.model.state_dict()
     
-    @torch.jit.export
-    def loss(self,
-             obs,
-             behaviour_actions,
-             reset_mask,
-             lstm_hxs,
-             rewards,
-             behaviour_log_probs):
+    def forward(
+            self,
+            obs : torch.Tensor,
+            behaviour_actions : torch.Tensor,
+            reset_mask : torch.Tensor,
+            lstm_hxs : Tuple[torch.Tensor, torch.Tensor],
+            rewards : torch.Tensor, 
+            behaviour_log_probs : torch.Tensor
+        ) -> Tuple [ torch.Tensor, Dict[str, torch.Tensor] ] :
         """
         Parameters
         ----------
@@ -77,8 +86,6 @@ class Impala(nn.Module):
         detached_loss : 
             List of the different losses
         """
-        assert obs.size()[0] == self.sequence_length+1
-
         # Forward pass of the model        
         target_log_probs, target_entropy, target_value = \
             self.model(obs=obs, 
@@ -91,8 +98,8 @@ class Impala(nn.Module):
                                       target_log_policy=target_log_probs[:-1].cpu(), # We remove bootstrap 
                                       rewards=rewards.cpu(),
                                       behaviour_log_policy=behaviour_log_probs.cpu())
-        v_targets.to(self.device)
-        rhos.to(self.device)
+        v_targets = v_targets.to(self.device)
+        rhos  = rhos.to(self.device)
 
         # Losses computation
 
@@ -126,7 +133,26 @@ class Impala(nn.Module):
         return loss, detached_losses
 
     @torch.jit.export
-    def act(self, obs, lstm_hxs):
+    def loss(
+            self, 
+            obs : torch.Tensor,
+            behaviour_actions : torch.Tensor,
+            reset_mask : torch.Tensor,
+            lstm_hxs : Tuple[torch.Tensor, torch.Tensor],
+            rewards : torch.Tensor,
+            behaviour_log_probs : torch.Tensor
+        ) -> Tuple[ torch.Tensor, Dict[str, torch.Tensor] ] :
+        return self.forward(
+                obs=obs,
+                behaviour_actions=behaviour_actions,
+                reset_mask=reset_mask,
+                lstm_hxs=lstm_hxs,
+                rewards=rewards, 
+                behaviour_log_probs=behaviour_log_probs
+            )
+
+    @torch.jit.export
+    def act(self, obs, lstm_hxs : Tuple[torch.Tensor, torch.Tensor]):
         """
         Parameters
         ----------
@@ -137,7 +163,3 @@ class Impala(nn.Module):
         """
         action, log_prob, lstm_hxs = self.model.act(obs, lstm_hxs)
         return action, log_prob, lstm_hxs
-
-    @torch.jit.export
-    def greedy_act(self):
-        pass

@@ -6,14 +6,10 @@ from queue import Empty
 from src.Agent import Trajectory
 from src.vtrace import VTrace
 
-# We don't need any locks because of the GIL
-# We can't use the same thing two times
-
-device = torch.device('cuda')
 
 class Trainer(Thread):
 
-    def __init__(self, id_, training_queue, batch_size, model, optimizer, statistics_queue, learning_step):
+    def __init__(self, id_, training_queue, batch_size, model, optimizer, statistics_queue, learning_step, sequence_length):
         
         super(Trainer, self).__init__()
 
@@ -25,7 +21,12 @@ class Trainer(Thread):
 
         # Add value for exit flag
         self.exit = False
+        
+        # Traning step sizes
+        self.sequence_length = sequence_length
         self.batch_size = batch_size
+
+        # Model 
         self.model = model
         self.optimizer = optimizer
 
@@ -63,7 +64,14 @@ class Trainer(Thread):
             #----------------
 
             loss, detached_losses = \
-                self.model.loss(obs, lstm_hxs, mask, behaviour_actions, rewards, behaviour_log_probs)
+                self.model.loss(
+                    obs=obs,
+                    behaviour_actions=behaviour_actions,
+                    reset_mask=mask,
+                    lstm_hxs=lstm_hxs,
+                    rewards=rewards, 
+                    behaviour_log_probs=behaviour_log_probs
+                )
 
             # Reset the gradients
             self.optimizer.zero_grad()
@@ -87,7 +95,7 @@ class Trainer(Thread):
             self.stats_queue.put((SummaryType.SCALAR, "loss/value", detached_losses["value"].item()))
             self.stats_queue.put((SummaryType.SCALAR, "loss/entropy", detached_losses["entropy"].item()))
             # Times
-            updates_per_sec = batch_size/(time.time()-batch_start)
+            updates_per_sec = self.sequence_length*batch_size/(time.time()-batch_start)
             self.stats_queue.put((SummaryType.SCALAR, "rate/training", updates_per_sec))
 
     @classmethod

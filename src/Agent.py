@@ -2,10 +2,10 @@ import random
 import numpy as np
 
 from torch.multiprocessing import Queue, Process
-from src.GymEnv import make_env
 from src.Statistics import SummaryType
 import torch
 from collections import namedtuple
+from src.GymEnv import make_env
 
 import torchvision.transforms as T
 
@@ -27,8 +27,11 @@ class Agent(Process):
                  exit_flag, 
                  statistics_queue, 
                  episode_counter, 
-                 device="cuda",
-                 step_max=5):
+                 observation_shape,
+                 action_space,
+                 device,
+                 step_max,
+                 lstm_hidden_size=256):
 
         # Calling parent class constructor
         super(Agent, self).__init__()
@@ -51,14 +54,18 @@ class Agent(Process):
         self.states = states
 
         self.step_max = step_max
-        print(f"Outputs {self.behaviour_policy.n_outputs}")
+
         self.memory = AgentMemory(num_steps=self.step_max, 
-                                     observation_shape=self.behaviour_policy.input_size, 
-                                     lstm_hidden_size=self.behaviour_policy.hidden_size, 
-                                     action_space=self.behaviour_policy.n_outputs)
+                                observation_shape=observation_shape, 
+                                lstm_hidden_size=lstm_hidden_size, 
+                                action_space=action_space)
         self.memory.to(self.device)
-            
+        
+        # Episodes
         self.episode_counter = episode_counter
+        self.channels = observation_shape[0]
+        self.heigh = observation_shape[1]
+        self.width = observation_shape[2]
 
         # Set exit as global value between processes
         self.exit = exit_flag
@@ -81,7 +88,7 @@ class Agent(Process):
                 # We start a new episode
                 # Selecting a random state
                 state = random.choice(self.states)
-                self.env = make_env(state=state)
+                self.env = make_env(state=state, stacks=self.channels, size=(self.width, self.heigh))
 
                 obs = self.env.reset()
                 done = False
@@ -94,11 +101,12 @@ class Agent(Process):
                 lstm_hxs = [torch.zeros((1, 1, 256)).to(self.device)]*2
 
             obs_tensor = torch.tensor(obs, dtype=torch.float) \
-                .unsqueeze_(0) \
                 .to(self.device)
 
             # Sending to predictor
             self.prediction_queue.put((self.id, obs_tensor, lstm_hxs))
+            
+            # Receiving the actions
             action, log_prob, lstm_hxs = self.action_queue.get()
 
             # Receive reward and new state           
@@ -219,9 +227,7 @@ class AgentMemory(object):
         self.step = 1
     
     def enqueue(self, device=torch.device("cuda")):
-        # Detach ? -> deletes the grad_fn attribute
-        # Detach makes sure that we don't record the history of our tensor, not to backprop
-        # This should already be done by detach but let's keep things safe !
+        # to() -> if already on correct device this is a no-op
         return Trajectory(
             length = self.step, 
             # Sequence and bootstrapping

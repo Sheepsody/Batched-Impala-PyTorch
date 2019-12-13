@@ -67,6 +67,7 @@ class Predictor(Thread):
             )
 
             # Predictions on GPU
+            # I tried different means but passing as cpu tensor still seems the best option
             with torch.no_grad():
                 actions, log_probs, lstm_hxs = self.model.act(observations, lstm_hxs)
 

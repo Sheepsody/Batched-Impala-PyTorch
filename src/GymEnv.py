@@ -11,12 +11,14 @@ import cv2
 from gym.wrappers import FrameStack
 
 
-def make_env(state, stacks, size, game='SuperMarioKart-Snes'):
+def make_env(state, stacks, size, game='SuperMarioKart-Snes', record=False):
     env = retro.make(
         game=game,
         use_restricted_actions=retro.Actions.ALL,
         state=state
     )
+    if record:
+        env = KartRecorder(env=env, size=size)
     env = KartMultiDiscretizer(env)
     env = KartObservation(env, size=size)
     env = FrameStack(env, num_stack=stacks)
@@ -25,6 +27,39 @@ def make_env(state, stacks, size, game='SuperMarioKart-Snes'):
     # Has to be done after skipper
     env = KartReward(env)
     return env
+
+
+class KartRecorder(gym.ObservationWrapper):
+    "Recording with OpenCV"
+    def __init__(self, env, size, name="record"):
+        super(KartRecorder, self).__init__(env)
+
+        # Initializing the movie
+        self.video_args = {
+            "filename": name+'.avi', 
+            "fourcc": cv2.VideoWriter_fourcc('M','J','P','G'), 
+            "fps":  4*60.0, # SNES refresh rate and speed increase
+            "frameSize": (256, 224)
+        }
+
+    def reset(self, **kwargs):
+        observation = super(KartRecorder, self).reset(**kwargs)
+        self.video = cv2.VideoWriter(**self.video_args)
+        return observation
+    
+    def observation(self, obs):
+        # Issue with the first frame while calling reset 
+        if hasattr(self, 'video'):
+            if self.video.isOpened():
+                self.video.write(obs)
+        return obs
+    
+    def close(self):
+        """Flush all monitor data to disk and close any open rending windows."""
+        super(KartRecorder, self).close()
+
+        if hasattr(self, 'video'):
+            self.video.release()
 
 
 class KartObservation(gym.ObservationWrapper):

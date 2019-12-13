@@ -3,7 +3,7 @@ import numpy as np
 import torch
 import cv2
 
-from src.networks.ActorCritic import ActorCritic
+from src.networks.ActorCritic import ActorCriticLSTM
 
 
 """
@@ -22,7 +22,7 @@ def load_checkpoint(checkpoint_path, config):
 
     epoch = checkpoint["epoch"]
     
-    model = ActorCritic(56, 128, 1, 9).float()
+    model = ActorCriticLSTM(56, 128, 1, 9).float()
     model.load_state_dict(checkpoint['model_state_dict'])
 
     optimizer = optim.SGD(model.parameters(),
@@ -39,7 +39,7 @@ def load_inference(checkpoint_path, device=torch.device("cpu")):
     """
     Loads a cpu 
     """
-    model = ActorCritic(56, 128, 1, 9).float()
+    model = ActorCriticLSTM(54, 54, 1, 9).float()
     model.load_state_dict(torch.load(checkpoint_path,
                                      map_location=device)["model_state_dict"])
     model.eval()

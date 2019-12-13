@@ -108,6 +108,8 @@ class Agent(Process):
             
             # Receiving the actions
             action, log_prob, lstm_hxs = self.action_queue.get()
+            
+            lstm_hxs = [item.to(self.device) for item in lstm_hxs]
 
             # Receive reward and new state           
             obs, reward, done, info = self.env.step(int(action.item()))

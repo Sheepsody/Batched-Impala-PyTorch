@@ -3,7 +3,7 @@ from torch.multiprocessing import cpu_count
 import torch.multiprocessing as mp
 import argparse
 from src.Manager import Manager
-
+import warnings
 
 # The fork method has to be setted in the main method, before any CUDA call
 if __name__ == "__main__":
@@ -15,12 +15,12 @@ if __name__ == "__main__":
     except RuntimeError:
         pass
 
-
-torch.autograd.set_detect_anomaly(True)
-
 print(f"PyTorch version {torch.__version__}")
 print(f"Number of CPU {cpu_count()}")
 print(f"Cuda enabled device {torch.cuda.is_available()}")
+
+print("Ignoring warnings from PyTorch")
+warnings.filterwarnings('ignore')
 
 parser = argparse.ArgumentParser()
 

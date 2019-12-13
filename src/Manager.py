@@ -35,7 +35,7 @@ class Manager(Thread):
         if self.config["settings"]["device"] == "cuda":
             assert torch.cuda.is_available()
         self.device = self.config["settings"]["device"]
-        self.agent_device = "cuda"
+        self.agent_device = self.config["settings"]["device"]
 
         # Test and training sets
         self.train_set, self.test_set = [], []
@@ -173,30 +173,6 @@ class Manager(Thread):
                 statistics_queue=self.statistics_queue,
                 device=self.device
             ))
-
-    def remove_agents(self, nb):
-        # Removes the nb last agents
-        assert len(self.agents) >= nb, "Too many agents to remove"
-        # Stop the agents after their episode 
-        for agent in self.agents[-nb:len(self.agents)]:
-            agent.exit.value = True
-        # Waiting for all these agents to stop
-        for agent in self.agents[-nb:len(self.agents)]:
-            self.agents[-1].join()
-            self.agents.pop()
-
-    def remove_trainer(self):
-        self.trainers[-1].exit = True
-        self.trainers[-1].join()
-        self.trainers.pop()
-    
-    def remove_predictor(self):
-        self.predictors[-1].exit = True
-        self.predictors[-1].join()
-        self.predictors.pop()
-
-    def remove_statistics(self):
-        self.statistics.join()
 
     def save_model(self):
         torch.save({

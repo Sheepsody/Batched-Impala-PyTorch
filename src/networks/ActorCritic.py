@@ -43,8 +43,9 @@ class ActorCritic(nn.Module):
             self.convs = DeepConv(c)
         else :
             raise AttributeError("The body type is not valid")
-
-        self.flatten_dim = self.convs.output_size(h, w)*32
+        
+        conv_out = self.convs.output_size((h, w))
+        self.flatten_dim = int(32*conv_out[0]*conv_out[1])
 
         # Fully connected layers
         self.flatten = Flatten()
@@ -123,7 +124,7 @@ class ActorCriticLSTM(nn.Module):
         "sequence_length"
     ]
 
-    def __init__(self, h, w, c, n_outputs, sequence_length, body=BodyType.SHALLOW):
+    def __init__(self, h, w, c, n_outputs, sequence_length=1, body=BodyType.SHALLOW):
         """You can have several types of body as long as they implement the size function"""
         super(ActorCriticLSTM, self).__init__()
 

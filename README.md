@@ -10,7 +10,7 @@ Yet! The results are pretty convicing. The AI was trained on three different lev
 Rewards obtained :   
 ![Rewards](./result/reward.png)   
 
-Result on MarioCircuit.Act3 (seen)   
+Result on MarioCircuit.Act3 (**SEEN**)   
 ![MarioCircuit.Act3](./result/MarioCircuit.Act3.gif)   
 
 Result on MarioCircuit.Act4 (**UNSEEN**)   

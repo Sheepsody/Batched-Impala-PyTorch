@@ -38,7 +38,7 @@ class KartRecorder(gym.ObservationWrapper):
         self.video_args = {
             "filename": name+'.avi', 
             "fourcc": cv2.VideoWriter_fourcc('M','J','P','G'), 
-            "fps":  4*60.0, # SNES refresh rate and speed increase
+            "fps":  60.0, # SNES refresh rate and speed increase
             "frameSize": (256, 224)
         }
 
@@ -51,7 +51,7 @@ class KartRecorder(gym.ObservationWrapper):
         # Issue with the first frame while calling reset 
         if hasattr(self, 'video'):
             if self.video.isOpened():
-                self.video.write(obs)
+                self.video.write(obs[..., ::-1])
         return obs
     
     def close(self):

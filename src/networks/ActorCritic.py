@@ -178,7 +178,7 @@ class ActorCriticLSTM(nn.Module):
         self.dist = Categorical
 
     @torch.jit.export
-    def act(self, obs, lstm_hxs : Tuple[torch.Tensor, torch.Tensor]):
+    def act(self, obs : torch.Tensor, lstm_hxs : Tuple[torch.Tensor, torch.Tensor]):
         """Performs an one-step prediction with detached gradients"""
         # x : (batch, input_size)
         x = self.body.forward(obs)
@@ -206,6 +206,27 @@ class ActorCriticLSTM(nn.Module):
         log_prob = dist.log_prob(action)
 
         return action, log_prob
+    
+    @torch.jit.export
+    def act_greedy(self, obs : torch.Tensor, lstm_hxs : Tuple[torch.Tensor, torch.Tensor]):
+        """Performs an one-step prediction with detached gradients"""
+        # x : (batch, input_size)
+        x = self.body.forward(obs)
+
+        x = x.unsqueeze(0)
+        # x : (1, batch, input_size)
+        
+        x, lstm_hxs = self.lstm(x, lstm_hxs)
+        x = x.squeeze(0)
+
+        # logits : (1, batch)
+        logits = self.logits(x)
+        action = torch.argmax(logits, dim=1)
+
+        lstm_hxs[0].detach_()
+        lstm_hxs[1].detach_()
+
+        return action.detach(), lstm_hxs
 
     def forward(self, obs, lstm_hxs : Tuple[torch.Tensor, torch.Tensor], mask, behaviour_actions):
         """

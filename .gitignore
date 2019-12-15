@@ -1,6 +1,8 @@
 # Visual studio code
 .vscode/
 .pytest_cache/
+.mypy_*/
+.ipynb_*/
 
 # Notebooks saves
 */.ipynb*/

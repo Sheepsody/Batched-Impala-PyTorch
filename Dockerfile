@@ -1,11 +1,17 @@
+# PyTorch image optimized for GPU
 FROM nvcr.io/nvidia/pytorch:19.10-py3
 
-RUN pip install gym gym-retro opencv-python gym[atari]
+# Install the dependencies
+RUN pip install gym gym-retro gym[atari]
+RUN pip install opencv-python 
 
-# COPY . /App/KartRL
+# Copy the source files
+COPY . /App/KartRL
 
-# Link the files 
+# Link the mario kart configuration
 RUN ln -s /App/SuperMarioKart-Snes/ /opt/conda/lib/python3.6/site-packages/retro/data/stable/
 
-# Run the trainining and tensorboard
-# tensorboard --logdir=/workspace/logs --port=6005 --bind_all
+WORKDIR /App/KartRL
+
+# Exposing the port (for the tensorboard)
+EXPOSE 6006

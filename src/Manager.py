@@ -15,6 +15,7 @@ import time
 import torch
 import os
 from src.GymEnv import KartMultiDiscretizer
+# TODO : if weights exists reuse thems
 
 
 class Manager(Thread):

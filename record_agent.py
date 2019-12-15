@@ -1,21 +1,12 @@
-# TODO model replay
-
-# TODO
-# This would be a callback to check the performancesimport random
-import numpy as np
 import torch
 import cv2
-from torch.multiprocessing import Process
-import os
-from math import ceil
-import matplotlib.pyplot as plt
-from matplotlib.collections import LineCollection
-from matplotlib.colors import ListedColormap, BoundaryNorm
 import os
 
 from src.GymEnv import make_env
-
 from src.utils import load_inference
+
+# -s for state
+# -c for checkpoint
 
 # Define the codec and create VideoWriter object
 model = load_inference("checkpoint.pt").float().to("cuda")

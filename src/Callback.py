@@ -1,5 +1,3 @@
-# TODO
-# This would be a callback to check the performancesimport random
 import numpy as np
 import torch
 import cv2
@@ -8,15 +6,11 @@ import os
 from math import ceil
 import matplotlib.pyplot as plt
 from matplotlib.collections import LineCollection
-from matplotlib.colors import ListedColormap, BoundaryNorm
+from matplotlib.colors import BoundaryNorm
+
 from src.Statistics import SummaryType
-
 from src.GymEnv import make_env
-
 from src.utils import load_inference
-
-
-# TODO : baseclass for callbacks
 
 
 class StateCallback(Process):
@@ -50,7 +44,7 @@ class StateCallback(Process):
         self.step_max = 10000
 
         print("plop")
-    
+
     def figure(self, ax, x, y, speed, state):
         # Rescale x and y to figure
         x, y = x/4, y/4
@@ -58,8 +52,8 @@ class StateCallback(Process):
         # Read image and RGB-> BGR
         background_path = os.path.join(self.maps_dir, state+".png")
         background = cv2.imread(background_path)
-        background = background[:,:,::-1]
-        
+        background = background[:, :, ::-1]
+
         # Create a line of segments
         points = np.array([x, y]).T.reshape(-1, 1, 2)
         segments = np.concatenate([points[:-1], points[1:]], axis=1)
@@ -93,7 +87,8 @@ class StateCallback(Process):
 
         while not done and step < self.step_max:
 
-            obs_tensor = torch.tensor(obs, dtype=torch.float).float().unsqueeze(0)
+            obs_tensor = torch.tensor(
+                obs, dtype=torch.float).float().unsqueeze(0)
             action, _ = self.model.select_action(obs_tensor)
             obs, _, done, info = env.step(action)
 
@@ -116,7 +111,7 @@ class StateCallback(Process):
 
         print("started")
 
-        # Train set 
+        # Train set
         subplot_shape = []
         ncols = ceil(np.sqrt(len(self.train_set)))
         nrows = ceil(len(self.train_set)/ncols)
@@ -132,11 +127,12 @@ class StateCallback(Process):
             x, y, speed = self.record_state(state)
             # Making the figure (modifies ax)
             self.figure(ax, x, y, speed, state)
-        
-        # Now send it to the tensorboard !
-        self.statistics_queue.put((SummaryType.FIGURE, "callback/train_set/", fig))
 
-        # Train set 
+        # Now send it to the tensorboard !
+        self.statistics_queue.put(
+            (SummaryType.FIGURE, "callback/train_set/", fig))
+
+        # Train set
         subplot_shape = []
         ncols = ceil(np.sqrt(len(self.test_set)))
         nrows = ceil(len(self.test_set)/subplot_shape[0])
@@ -148,8 +144,9 @@ class StateCallback(Process):
             x, y, speed = self.record_state(state)
             # Making the figure (modifies ax)
             self.figure(ax, x, y, speed, state)
-        
+
         # Now send it to the tensorboard !
-        self.statistics_queue.put((SummaryType.FIGURE, "callback/test_set/", fig))
+        self.statistics_queue.put(
+            (SummaryType.FIGURE, "callback/test_set/", fig))
 
         print("finished")

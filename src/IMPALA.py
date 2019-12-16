@@ -12,15 +12,13 @@ except:
 
 
 class Impala(nn.Module):
-    # Can be constants
+    """Network that formalises the methods describe in the IMPALA paper"""
+    
     __constants__ = [
         'entropy_coef',
         'value_coef',
         'discount_factor'
     ]
-    # entropy_coef : Final[float]
-    # value_coef : Final[float]
-    # discount_factor : Final[float]
     
     def __init__(self, sequence_length, entropy_coef, value_coef, discount_factor, model, rho=1.0, cis=1.0, device="cuda"):
         super(Impala, self).__init__()
@@ -46,9 +44,11 @@ class Impala(nn.Module):
         ).to("cpu") 
 
     def update_network(self, target_model):
+        """Updates the weights with the encapsulated network"""
         self.model.load_state_dict(target_model.state_dict())
     
     def get_model_state_dict(self):
+        """Only saves the weights of the encapsulated model"""
         return self.model.state_dict()
     
     def forward(
@@ -152,7 +152,7 @@ class Impala(nn.Module):
             )
 
     @torch.jit.export
-    def act(self, obs, lstm_hxs : Tuple[torch.Tensor, torch.Tensor]):
+    def act(self, obs : torch.Tensor, lstm_hxs : Tuple[torch.Tensor, torch.Tensor]):
         """
         Parameters
         ----------
@@ -160,6 +160,12 @@ class Impala(nn.Module):
             shape (batch, c, h, w)
         lstm_hxs : torch.tensor
             shape (1, batch, hidden)
+
+        Returns
+        -------
+        action: torch.Tensor
+        log_prob : torch.Tensor
+        lstm_hxs : torch.Tensor
         """
         action, log_prob, lstm_hxs = self.model.act(obs, lstm_hxs)
         return action, log_prob, lstm_hxs

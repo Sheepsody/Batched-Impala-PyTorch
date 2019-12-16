@@ -1,4 +1,3 @@
-from torch.multiprocessing import Process, Queue, Value
 from torch.utils.tensorboard import SummaryWriter
 from enum import Enum
 from threading import Thread
@@ -16,9 +15,7 @@ class SummaryType(Enum):
 
 # Not working asynchronously
 class Statistics(Thread):
-    """
-    Computes the statistics for the different processes through a queue
-    """
+    """Writes the statistics of the async processes into a tensorboard"""
 
     def __init__(self, writer_dir, statistics_queue, nb_episodes):
 
@@ -41,7 +38,7 @@ class Statistics(Thread):
             try:
                 summary_type, tag, data = self.stats_queue.get(timeout=1)
             except Empty:
-                if self.exit :
+                if self.exit:
                     break
                 continue
 

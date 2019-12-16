@@ -1,28 +1,16 @@
-import numpy as np
-
 import torch
-import cv2
 
 from src.networks.ActorCritic import ActorCriticLSTM
 
 
-"""
-FUNCTIONS TO SAVE AND RESTORE
-Yet supported :
-* model
-* optimizer
-* epoch
-"""
 
 def load_checkpoint(checkpoint_path, config):
-    """
-    Load on GPU the model trained on GPU
-    """
+    """Load on GPU the model trained on GPU"""
     checkpoint = torch.load(checkpoint_path)
 
     epoch = checkpoint["epoch"]
     
-    model = ActorCriticLSTM(56, 128, 1, 9).float()
+    model = ActorCriticLSTM(54, 54, 1, 9).float()
     model.load_state_dict(checkpoint['model_state_dict'])
 
     optimizer = optim.SGD(model.parameters(),
@@ -36,9 +24,6 @@ def load_checkpoint(checkpoint_path, config):
     return epoch, model, optimizer
 
 def load_inference(checkpoint_path, device=torch.device("cpu")):
-    """
-    Loads a cpu 
-    """
     model = ActorCriticLSTM(54, 54, 1, 9).float()
     model.load_state_dict(torch.load(checkpoint_path,
                                      map_location=device)["model_state_dict"])

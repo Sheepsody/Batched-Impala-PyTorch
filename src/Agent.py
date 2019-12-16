@@ -1,32 +1,24 @@
+import time
 import random
-import numpy as np
-
-from torch.multiprocessing import Queue, Process
-from src.Statistics import SummaryType
 import torch
+from torch.multiprocessing import Queue, Process
 from collections import namedtuple
+
+from src.Statistics import SummaryType
 from src.GymEnv import make_env
 
-import torchvision.transforms as T
 
-import time
+class Agent(Process):
+    """Agent process used to gather trajectories of experiences asynchronously"""
 
-
-class Agent(Process):   
-    """
-    TODO Documentation with IMPALA
-    Designed in the case of multiple machines
-    TODO function for dynamic batching
-    """
-
-    def __init__(self, 
-                 id_, 
+    def __init__(self,
+                 id_,
                  prediction_queue,
-                 training_queue, 
-                 states, 
-                 exit_flag, 
-                 statistics_queue, 
-                 episode_counter, 
+                 training_queue,
+                 states,
+                 exit_flag,
+                 statistics_queue,
+                 episode_counter,
                  observation_shape,
                  action_space,
                  device,
@@ -55,12 +47,12 @@ class Agent(Process):
 
         self.step_max = step_max
 
-        self.memory = AgentMemory(num_steps=self.step_max, 
-                                observation_shape=observation_shape, 
-                                lstm_hidden_size=lstm_hidden_size, 
-                                action_space=action_space)
+        self.memory = AgentMemory(num_steps=self.step_max,
+                                  observation_shape=observation_shape,
+                                  lstm_hidden_size=lstm_hidden_size,
+                                  action_space=action_space)
         self.memory.to(self.device)
-        
+
         # Episodes
         self.episode_counter = episode_counter
         self.channels = observation_shape[0]
@@ -71,6 +63,7 @@ class Agent(Process):
         self.exit = exit_flag
 
     def run(self):
+        """Starts the Agent process. It can be stopped thanks to the self.exit flag."""
 
         # Strating the process
         super(Agent, self).run()
@@ -84,11 +77,12 @@ class Agent(Process):
         # exit_flag is a shared torch.multiprocessing value
         while not self.exit.value:
 
-            if done :
+            if done:
                 # We start a new episode
                 # Selecting a random state
                 state = random.choice(self.states)
-                self.env = make_env(state=state, stacks=self.channels, size=(self.width, self.heigh))
+                self.env = make_env(
+                    state=state, stacks=self.channels, size=(self.width, self.heigh))
 
                 obs = self.env.reset()
                 done = False
@@ -105,19 +99,19 @@ class Agent(Process):
 
             # Sending to predictor
             self.prediction_queue.put((self.id, obs_tensor, lstm_hxs))
-            
+
             # Receiving the actions
             action, log_prob, lstm_hxs = self.action_queue.get()
-            
+
             lstm_hxs = [item.to(self.device) for item in lstm_hxs]
 
-            # Receive reward and new state           
+            # Receive reward and new state
             obs, reward, done, info = self.env.step(int(action.item()))
 
             # Update the trajectory with the latest step
             self.memory.append_(
-                observation=obs_tensor, 
-                action=action, 
+                observation=obs_tensor,
+                action=action,
                 reward=torch.tensor(reward),
                 log_prob=log_prob,
                 done=torch.tensor(done)
@@ -144,7 +138,7 @@ class Agent(Process):
             step += 1
 
             # Statistics about the episode
-            if done :
+            if done:
                 self.episode_counter.value += 1
                 episode_duration = info["milliseconds"] + \
                     (info["seconds"] + info["minutes"]*60)*60
@@ -173,7 +167,7 @@ class Agent(Process):
 Trajectory = namedtuple(
     "Trajectory",
     [
-        'length', 
+        'length',
         'observations',
         'actions',
         'rewards',
@@ -184,10 +178,10 @@ Trajectory = namedtuple(
     ]
 )
 
+
 class AgentMemory(object):
-    """
-    Object to store the trajectories in an optimized way
-    """
+    """Storage for the Agent experiences"""
+
     def __init__(self, num_steps, observation_shape, lstm_hidden_size, action_space):
         self.observations = torch.zeros(1+num_steps, *observation_shape)
         self.lstm_initial_hidden = torch.zeros(1, 1, lstm_hidden_size)
@@ -197,7 +191,7 @@ class AgentMemory(object):
         self.log_probs = torch.zeros(1+num_steps, 1)
         self.done = torch.zeros(1+num_steps, 1)
         self.step = 0
-    
+
     def to(self, device):
         self.observations.to(device)
         self.lstm_initial_hidden.to(device)
@@ -206,7 +200,7 @@ class AgentMemory(object):
         self.rewards.to(device)
         self.log_probs.to(device)
         self.done.to(device)
-    
+
     # Inplace operation
     def append_(self, observation, action, reward, log_prob, done):
         self.observations[self.step].copy_(observation)
@@ -215,7 +209,7 @@ class AgentMemory(object):
         self.log_probs[self.step].copy_(log_prob)
         self.done[self.step].copy_(done)
         self.step += 1
-    
+
     def reset(self, initial_lstm_state):
         # No need to zero the tensors
         self.observations[0].copy_(self.observations[-1])
@@ -227,19 +221,19 @@ class AgentMemory(object):
         self.done[0].copy_(self.done[-1])
         # Length of the current trajectory
         self.step = 1
-    
+
     def enqueue(self, device=torch.device("cuda")):
         # to() -> if already on correct device this is a no-op
         return Trajectory(
-            length = self.step, 
+            length=self.step,
             # Sequence and bootstrapping
-            observations = self.observations[:self.step].clone().to(device),
-            actions = self.actions[:self.step].clone().to(device),
-            done = self.done[:self.step].clone().to(device),
+            observations=self.observations[:self.step].clone().to(device),
+            actions=self.actions[:self.step].clone().to(device),
+            done=self.done[:self.step].clone().to(device),
             # Full sequence
-            rewards = self.rewards[:self.step-1].clone().to(device), 
-            log_probs = self.log_probs[:self.step-1].clone().to(device), 
+            rewards=self.rewards[:self.step-1].clone().to(device),
+            log_probs=self.log_probs[:self.step-1].clone().to(device),
             # Initial hidden states
-            lstm_initial_hidden = self.lstm_initial_hidden.clone().to(device),
-            lstm_initial_cell = self.lstm_initial_cell.clone().to(device)
+            lstm_initial_hidden=self.lstm_initial_hidden.clone().to(device),
+            lstm_initial_cell=self.lstm_initial_cell.clone().to(device)
         )

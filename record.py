@@ -1,9 +1,6 @@
-# This code runs the agents following a greedy policy
-
-import torch
-import cv2
 import os
 import argparse
+import torch
 
 from src.GymEnv import make_env
 from src.utils import load_inference
@@ -20,13 +17,12 @@ if __name__=="__main__":
     if (not os.path.isfile(args["state"])) or (not os.path.isfile(args["checkpoint"])):
         raise ValueError("Arguments are not valid")
 
-    # Define the codec and create VideoWriter object
-    model = load_inference("checkpoint.pt").float().to("cuda")
+    # Load model
+    model = load_inference(args.checkpoint).float().to("cuda")
 
-    env = make_env(game='SuperMarioKart-Snes', state="MarioCircuit.Act3", stacks=1, size=(54, 54), record=True)
-
+    # Environnement with OpenCV recording
+    env = make_env(game='SuperMarioKart-Snes', state=args.state, stacks=1, size=(54, 54), record=True)
     obs = env.reset()
-
     done = False
 
     lstm_hxs = [torch.zeros((1, 1, 256)).to("cuda")]*2
@@ -38,3 +34,5 @@ if __name__=="__main__":
         obs, _, done, _ = env.step(action)
 
     env.close()
+
+# TODO : could add options from config file

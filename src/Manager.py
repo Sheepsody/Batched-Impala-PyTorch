@@ -1,26 +1,25 @@
+import time
 import configparser
+from ctypes import c_bool
+from threading import Thread
+import torch.optim as optim
+import torch
+from torch.multiprocessing import Queue, Value
+
 from src.IMPALA import Impala
 from src.networks.ActorCritic import ActorCriticLSTM
-import torch.multiprocessing as mp
-from torch.multiprocessing import Queue, Value
 from src.Statistics import Statistics
-from torch.multiprocessing import Process
 from src.Trainer import Trainer
 from src.Predictor import Predictor
 from src.Agent import Agent
-import torch.optim as optim
-from ctypes import c_bool
-from threading import Thread
-import time
-import torch
-import os
 from src.GymEnv import KartMultiDiscretizer
 
 
 class Manager(Thread):
-    
+    """Manager Thread that start/stops threads and processes"""
+
     def __init__(self, config_file):
-        
+
         super(Manager, self).__init__()
         # Setting it as daemon child
         self.daemon = True
@@ -42,14 +41,14 @@ class Manager(Thread):
         for key, value in self.config["levels"].items():
             if value == "train":
                 self.train_set.append(key)
-            elif value == "test" :
+            elif value == "test":
                 self.test_set.append(key)
 
         # Dimensions of the view
         self.channels = int(self.config["environnement"]["stacks"])
         self.height = int(self.config["environnement"]["height"])
         self.width = int(self.config["environnement"]["width"])
-        
+
         # Creating the environnement generation function
         self.n_outputs = len(KartMultiDiscretizer.discretized_actions)
 
@@ -64,10 +63,10 @@ class Manager(Thread):
         # Building the model and share it (cf torch.multiprocessing best practices)
         self.model = torch.jit.script(
             ActorCriticLSTM(
-                c = self.channels,
-                h = self.height,
-                w = self.width,
-                n_outputs = self.n_outputs,
+                c=self.channels,
+                h=self.height,
+                w=self.width,
+                n_outputs=self.n_outputs,
                 sequence_length=self.sequence_length
             ).float()
         ).to(self.device)
@@ -79,7 +78,7 @@ class Manager(Thread):
             value_coef=self.value_coef,
             discount_factor=self.discount_factor,
             model=self.model,
-            rho=self.rho, 
+            rho=self.rho,
             cis=self.cis,
             device=self.device
         ))
@@ -90,19 +89,26 @@ class Manager(Thread):
 
         # Building the optimizer
         self.optimizer = optim.RMSprop(self.model.parameters(),
-                                lr=float(self.config["optimizer"]["lr"]), 
-                                alpha=float(self.config["optimizer"]["alpha"]),
-                                eps=float(self.config["optimizer"]["eps"]),
-                                momentum=float(self.config["optimizer"]["momentum"]),
-                                weight_decay=float(self.config["optimizer"]["weight_decay"]),
-                                centered=self.config["optimizer"]["centered"]=="True")
+                                       lr=float(
+                                           self.config["optimizer"]["lr"]),
+                                       alpha=float(
+                                           self.config["optimizer"]["alpha"]),
+                                       eps=float(
+                                           self.config["optimizer"]["eps"]),
+                                       momentum=float(
+                                           self.config["optimizer"]["momentum"]),
+                                       weight_decay=float(
+                                           self.config["optimizer"]["weight_decay"]),
+                                       centered=self.config["optimizer"]["centered"] == "True")
 
         # Checkpoints directory
         self.checkpoint_path = self.config["settings"]["checkpoint_path"]
 
         # Building the torch.multiprocessing-queues
-        self.training_queue = Queue(maxsize=int(self.config["settings"]["training_queue"]))
-        self.prediction_queue = Queue(maxsize=int(self.config["settings"]["prediction_queue"]))
+        self.training_queue = Queue(maxsize=int(
+            self.config["settings"]["training_queue"]))
+        self.prediction_queue = Queue(maxsize=int(
+            self.config["settings"]["prediction_queue"]))
         self.statistics_queue = Queue()
 
         # Building the torch.multiprocessing-values
@@ -119,9 +125,11 @@ class Manager(Thread):
         )
 
         # Agents, predictions and learners
-        self.training_batch_size = int(self.config["settings"]["training_batch_size"])
+        self.training_batch_size = int(
+            self.config["settings"]["training_batch_size"])
         self.trainers = []
-        self.prediction_batch_size = int(self.config["settings"]["prediction_batch_size"])
+        self.prediction_batch_size = int(
+            self.config["settings"]["prediction_batch_size"])
         self.predictors = []
         self.agents = []
 
@@ -160,7 +168,7 @@ class Manager(Thread):
                 learning_step=self.learning_step,
                 sequence_length=self.sequence_length
             ))
-    
+
     def add_predictors(self, nb):
         old_length = len(self.predictors)
         for index in range(old_length, old_length+nb):
@@ -182,7 +190,7 @@ class Manager(Thread):
         }, self.config["settings"]["checkpoint_path"])
 
     def run(self):
-        
+
         super(Manager, self).run()
 
         # Strating the threads and processes
@@ -193,7 +201,7 @@ class Manager(Thread):
         [predictor.start() for predictor in self.predictors]
 
         # Loop
-        while self.nb_episodes.value < self.max_nb_steps :
+        while self.nb_episodes.value < self.max_nb_steps:
             time.sleep(2*60)
             self.save_model()
 
@@ -201,7 +209,7 @@ class Manager(Thread):
         for agent in self.agents:
             agent.exit_flag.value = True
 
-        # Stopping all the threads        
+        # Stopping all the threads
         for thread in [*self.trainers, *self.predictors, self.statistics]:
             thread.exit = True
             thread.join()

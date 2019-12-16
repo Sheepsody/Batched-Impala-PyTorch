@@ -1,14 +1,16 @@
 # Reinforced learning on マリオカート using Batched-IMPALA
 
-This project is an implementation of IMPALA with PyTorch. It also incorporates a configuration to test the algorithm on MarioKart Snes.
+This is an implementation of IMPALA (with batching for single GPU case) in PyTorch. It also incorporates the Gym Wrappers to test the framework on SuperMarioKart-Snes.
 
 ## Results 
 
-I trained an AI to play to Mario Kart on my personnal computer. However, due to its **poor configuration** (8gb ram, NVidia 1060...), I could only run **2 agents**, for **12 hours** (divided in three phases). Maibe nicer results will come out one I get my hands on something a bit more powerful...
-Yet! The results are pretty convicing. The AI was trained on three different levels (MarioCircuit.Act1~3) and tested on MarioCircuit.Act4 (unseen).
+I trained an AI with this framework for 12 hours on my personnal computer, that unfortunalely suffers from a poor configuration (1060 and 8gb RAM), so only 2 async agents could be runned at a time. However, this still produces pretty nice results.
+
+The configuration for this traning can be found in _default.cfg_. In this situation, only the MarioCircuit was used, with the circuits divided between a "traning" dataset (1~3) and a "testing" (unseen) dataset. The results are displayed bellow. You can also see the maps of the circuits that I used.
 
 Rewards obtained :   
 ![Rewards](./result/reward.png)   
+
 
 Result on MarioCircuit.Act3 (**SEEN**)   
 ![MarioCircuit.Act3](./result/MarioCircuit.Act3.gif)   
@@ -22,12 +24,12 @@ Result on MarioCircuit.Act4 (**UNSEEN**)
 The main features of this project are :
 * **Asynchronous Actor-Critic**
   * As was proposed in *Reinforcement Learning through Asynchronous Advantage Actor-Critic on a GPU* ([arXiv:1611.06256](https://arxiv.org/abs/1611.06256)) ;
-  * This method takes advantage of the GPU's parallelisation to improve the results of A3C. Namely, all the computation are made in a batched way using a predictor thread and a learner thread. This is however only for the **single GPU case**. But it could be extended to the mutli-GPU case with only few additions.
+  * This method takes advantage of the GPU's parallelisation to improve the results of A3C. Namely, all the predictions and the loss computations are batched together to increase the throughput of the model. This could also be extended to the multi-GPU case.
 * **IMPALA**
   * This framework was proposed in *IMPALA: Scalable Distributed Deep-RL with Importance Weighted Actor-Learner Architectures* ([arXiv:1802.01561](https://arxiv.org/abs/1802.01561)) ;
-  * *V-Trace* (a novel actor-critic algorithm), was also introduced in this paper. When using asynchronous updates based on trajectories recorded by agents. It provides an off-policy correction which reduces the bias and the variance, while achieving significan throughput.
+  * *V-Trace* (a novel actor-critic algorithm), was also introduced in this paper. When using asynchronous updates based on trajectories recorded by agents, it provides an off-policy correction that reduces the bias and the variance, while maintaining a high thoughput.
 * **PyTorch and Tensorboard**
-  * The implementation I proposed is based on the popular framework [PyTorch](https://pytorch.org/), develloped byFacebook. I used **Torchscripts** to improve the overall training speed, with significant imporvements
+  * The implementation I proposed is based on the popular framework [PyTorch](https://pytorch.org/), develloped by Facebook. I used **Torchscripts** to improve the overall training speed, with significant improvements
   * A process is dedicated to visualisation thanks to tensorboard, and intergrates various metrics (duration, cumulated reward, loss, batches rates, etc...);
 * And among the rest...
   * **Gym Wrappers** for the [retro](https://github.com/openai/retro) environnement of OpenAI ;
@@ -38,11 +40,11 @@ The main features of this project are :
 
 ### Installation
 
-To run this project, you need to install **nvidia-docker**. Just follow the installation steps on the [official repository from nvidia](https://github.com/NVIDIA/nvidia-docker). You can also run the code directly on CPU, but I wouldn't recommand it, since it's coded in a GPU perspective.
+To run this project, you need to install **nvidia-docker**. Just follow the installation steps on the [official repository from nvidia](https://github.com/NVIDIA/nvidia-docker). You can also run the code directly on CPU, but I wouldn't recommand it, since it's coded with a GPU perspective.
 
 ### Building the docker image
 
-The project can be runned into a Docker Container. It takes care of installing the dependencies, and linking the Snes configuration of Mario Kart.
+The project can be runned into a Docker Container, which contains all the dependencies for the project.
 
 ```bash
 # Docker build the image
@@ -63,7 +65,7 @@ python run.py
 python record.py -s MarioCircuit.Act3 -p checkpoint.pt
 
 # Launch the tensorboard
-tensorboard --bind_all --port 6006 --logdir=/logs
+tensorboard --bind_all --port 6006 --logdir=./logs/
 ```
 
 **Enjoy!** If you have any nice results, don't hesitate to message me!
@@ -85,7 +87,7 @@ tensorboard --bind_all --port 6006 --logdir=/logs
 * Papers
   * Playing Atari with Deep Reinforcement Learning [arXiv:1312.5602](https://arxiv.org/abs/1312.5602)
   * Asynchronous Methods for Deep Reinforcement Learning [arXiv:1602.01783](https://arxiv.org/abs/1602.01783)
-  * Reinforcement Learning through Asynchronous Advantage Actor-Critic on a GPU[arXiv:1611.06256](https://arxiv.org/abs/1611.06256)
+  * Reinforcement Learning through Asynchronous Advantage Actor-Critic on a GPU [arXiv:1611.06256](https://arxiv.org/abs/1611.06256)
   * IMPALA: Scalable Distributed Deep-RL with Importance Weighted Actor-Learner Architectures [arXiv:1802.01561](https://arxiv.org/abs/1802.01561)
   * Great source for RL papers by OpenAI: [Spinning-up OpenAI](https://spinningup.openai.com/en/latest/spinningup/keypapers.html)
 * Others 

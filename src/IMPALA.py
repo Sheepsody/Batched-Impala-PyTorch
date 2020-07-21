@@ -13,14 +13,20 @@ except:
 
 class Impala(nn.Module):
     """Network that formalises the methods describe in the IMPALA paper"""
-    
-    __constants__ = [
-        'entropy_coef',
-        'value_coef',
-        'discount_factor'
-    ]
-    
-    def __init__(self, sequence_length, entropy_coef, value_coef, discount_factor, model, rho=1.0, cis=1.0, device="cuda"):
+
+    __constants__ = ["entropy_coef", "value_coef", "discount_factor"]
+
+    def __init__(
+        self,
+        sequence_length,
+        entropy_coef,
+        value_coef,
+        discount_factor,
+        model,
+        rho=1.0,
+        cis=1.0,
+        device="cuda",
+    ):
         super(Impala, self).__init__()
 
         self.device = device
@@ -38,28 +44,28 @@ class Impala(nn.Module):
             VTrace(
                 discount_factor=discount_factor,
                 rho=rho,
-                cis=cis, 
-                sequence_length=self.sequence_length
+                cis=cis,
+                sequence_length=self.sequence_length,
             )
-        ).to("cpu") 
+        ).to("cpu")
 
     def update_network(self, target_model):
         """Updates the weights with the encapsulated network"""
         self.model.load_state_dict(target_model.state_dict())
-    
+
     def get_model_state_dict(self):
         """Only saves the weights of the encapsulated model"""
         return self.model.state_dict()
-    
+
     def forward(
-            self,
-            obs : torch.Tensor,
-            behaviour_actions : torch.Tensor,
-            reset_mask : torch.Tensor,
-            lstm_hxs : Tuple[torch.Tensor, torch.Tensor],
-            rewards : torch.Tensor, 
-            behaviour_log_probs : torch.Tensor
-        ) -> Tuple [ torch.Tensor, Dict[str, torch.Tensor] ] :
+        self,
+        obs: torch.Tensor,
+        behaviour_actions: torch.Tensor,
+        reset_mask: torch.Tensor,
+        lstm_hxs: Tuple[torch.Tensor, torch.Tensor],
+        rewards: torch.Tensor,
+        behaviour_log_probs: torch.Tensor,
+    ) -> Tuple[torch.Tensor, Dict[str, torch.Tensor]]:
         """
         Parameters
         ----------
@@ -86,25 +92,30 @@ class Impala(nn.Module):
         detached_loss : 
             List of the different losses
         """
-        # Forward pass of the model        
-        target_log_probs, target_entropy, target_value = \
-            self.model(obs=obs, 
-                       lstm_hxs=lstm_hxs,
-                       mask=reset_mask,
-                       behaviour_actions=behaviour_actions)
-        
+        # Forward pass of the model
+        target_log_probs, target_entropy, target_value = self.model(
+            obs=obs,
+            lstm_hxs=lstm_hxs,
+            mask=reset_mask,
+            behaviour_actions=behaviour_actions,
+        )
+
         # VTrace
-        v_targets, rhos = self.vtrace(target_value=target_value.cpu(), # Contains the bootstrapping
-                                      target_log_policy=target_log_probs[:-1].cpu(), # We remove bootstrap 
-                                      rewards=rewards.cpu(),
-                                      behaviour_log_policy=behaviour_log_probs.cpu())
+        v_targets, rhos = self.vtrace(
+            target_value=target_value.cpu(),  # Contains the bootstrapping
+            target_log_policy=target_log_probs[:-1].cpu(),  # We remove bootstrap
+            rewards=rewards.cpu(),
+            behaviour_log_policy=behaviour_log_probs.cpu(),
+        )
         v_targets = v_targets.to(self.device)
-        rhos  = rhos.to(self.device)
+        rhos = rhos.to(self.device)
 
         # Losses computation
 
         # Value loss = l2 target loss -> (v_s - V_w(x_s))**2
-        loss_value = (v_targets - target_value).pow_(2)  # No need to remove bootstrap as diff equals zero
+        loss_value = (v_targets - target_value).pow_(
+            2
+        )  # No need to remove bootstrap as diff equals zero
         loss_value = loss_value.sum()
 
         # Policy loss -> - rho * advantage * log_policy & entropy bonus sum(policy*log_policy)
@@ -113,7 +124,7 @@ class Impala(nn.Module):
         # L = - log_prob * A
         # The advantage function reduces variance
         advantage = rewards + self.discount_factor * v_targets[1:] - target_value[:-1]
-        loss_policy = - rhos * target_log_probs[:-1] * advantage.detach()
+        loss_policy = -rhos * target_log_probs[:-1] * advantage.detach()
         loss_policy = loss_policy.sum()
 
         # Adding the entropy bonus (much like A3C for instance)
@@ -127,32 +138,32 @@ class Impala(nn.Module):
         detached_losses = {
             "policy": loss_policy.detach().cpu(),
             "value": loss_value.detach().cpu(),
-            "entropy": entropy.detach().cpu()
+            "entropy": entropy.detach().cpu(),
         }
 
         return loss, detached_losses
 
     @torch.jit.export
     def loss(
-            self, 
-            obs : torch.Tensor,
-            behaviour_actions : torch.Tensor,
-            reset_mask : torch.Tensor,
-            lstm_hxs : Tuple[torch.Tensor, torch.Tensor],
-            rewards : torch.Tensor,
-            behaviour_log_probs : torch.Tensor
-        ) -> Tuple[ torch.Tensor, Dict[str, torch.Tensor] ] :
+        self,
+        obs: torch.Tensor,
+        behaviour_actions: torch.Tensor,
+        reset_mask: torch.Tensor,
+        lstm_hxs: Tuple[torch.Tensor, torch.Tensor],
+        rewards: torch.Tensor,
+        behaviour_log_probs: torch.Tensor,
+    ) -> Tuple[torch.Tensor, Dict[str, torch.Tensor]]:
         return self.forward(
-                obs=obs,
-                behaviour_actions=behaviour_actions,
-                reset_mask=reset_mask,
-                lstm_hxs=lstm_hxs,
-                rewards=rewards, 
-                behaviour_log_probs=behaviour_log_probs
-            )
+            obs=obs,
+            behaviour_actions=behaviour_actions,
+            reset_mask=reset_mask,
+            lstm_hxs=lstm_hxs,
+            rewards=rewards,
+            behaviour_log_probs=behaviour_log_probs,
+        )
 
     @torch.jit.export
-    def act(self, obs : torch.Tensor, lstm_hxs : Tuple[torch.Tensor, torch.Tensor]):
+    def act(self, obs: torch.Tensor, lstm_hxs: Tuple[torch.Tensor, torch.Tensor]):
         """
         Parameters
         ----------

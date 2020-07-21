@@ -14,8 +14,15 @@ from src.utils import load_inference
 
 
 class StateCallback(Process):
-
-    def __init__(self, checkpoint_path, step, records_folder, train_set, test_set, statistics_queue):
+    def __init__(
+        self,
+        checkpoint_path,
+        step,
+        records_folder,
+        train_set,
+        test_set,
+        statistics_queue,
+    ):
 
         super(StateCallback, self).__init__()
 
@@ -23,7 +30,7 @@ class StateCallback(Process):
         self.daemon = True
 
         # Init the environnement
-        self.game = 'SuperMarioKart-Snes'
+        self.game = "SuperMarioKart-Snes"
         self.train_set = train_set
         self.test_set = test_set
 
@@ -47,10 +54,10 @@ class StateCallback(Process):
 
     def figure(self, ax, x, y, speed, state):
         # Rescale x and y to figure
-        x, y = x/4, y/4
+        x, y = x / 4, y / 4
 
         # Read image and RGB-> BGR
-        background_path = os.path.join(self.maps_dir, state+".png")
+        background_path = os.path.join(self.maps_dir, state + ".png")
         background = cv2.imread(background_path)
         background = background[:, :, ::-1]
 
@@ -60,7 +67,7 @@ class StateCallback(Process):
 
         # Create a continuous norm to map from data points to colors
         norm = plt.Normalize(speed.min(), speed.max())
-        lc = LineCollection(segments, cmap='winter', norm=norm)
+        lc = LineCollection(segments, cmap="winter", norm=norm)
 
         # Set the values used for colormapping
         lc.set_array(speed)
@@ -76,8 +83,8 @@ class StateCallback(Process):
 
     def record_state(self, state):
 
-        env = make_env(game='SuperMarioKart-Snes', state=state)
-        env.record_movie(os.path.join(self.path, state+".bk2"))
+        env = make_env(game="SuperMarioKart-Snes", state=state)
+        env.record_movie(os.path.join(self.path, state + ".bk2"))
         obs = env.reset()
 
         x, y, speed = [], [], []
@@ -87,8 +94,7 @@ class StateCallback(Process):
 
         while not done and step < self.step_max:
 
-            obs_tensor = torch.tensor(
-                obs, dtype=torch.float).float().unsqueeze(0)
+            obs_tensor = torch.tensor(obs, dtype=torch.float).float().unsqueeze(0)
             action, _ = self.model.select_action(obs_tensor)
             obs, _, done, info = env.step(action)
 
@@ -114,7 +120,7 @@ class StateCallback(Process):
         # Train set
         subplot_shape = []
         ncols = ceil(np.sqrt(len(self.train_set)))
-        nrows = ceil(len(self.train_set)/ncols)
+        nrows = ceil(len(self.train_set) / ncols)
         fig, axs = plt.subplots(nrows=nrows, ncols=ncols)
         fig.gca().invert_yaxis()
 
@@ -129,13 +135,12 @@ class StateCallback(Process):
             self.figure(ax, x, y, speed, state)
 
         # Now send it to the tensorboard !
-        self.statistics_queue.put(
-            (SummaryType.FIGURE, "callback/train_set/", fig))
+        self.statistics_queue.put((SummaryType.FIGURE, "callback/train_set/", fig))
 
         # Train set
         subplot_shape = []
         ncols = ceil(np.sqrt(len(self.test_set)))
-        nrows = ceil(len(self.test_set)/subplot_shape[0])
+        nrows = ceil(len(self.test_set) / subplot_shape[0])
         fig, axs = plt.subplots(nrows=nrows, ncols=ncols)
         fig.gca().invert_yaxis()
 
@@ -146,7 +151,6 @@ class StateCallback(Process):
             self.figure(ax, x, y, speed, state)
 
         # Now send it to the tensorboard !
-        self.statistics_queue.put(
-            (SummaryType.FIGURE, "callback/test_set/", fig))
+        self.statistics_queue.put((SummaryType.FIGURE, "callback/test_set/", fig))
 
         print("finished")

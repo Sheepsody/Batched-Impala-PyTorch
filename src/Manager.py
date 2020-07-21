@@ -67,53 +67,54 @@ class Manager(Thread):
                 h=self.height,
                 w=self.width,
                 n_outputs=self.n_outputs,
-                sequence_length=self.sequence_length
+                sequence_length=self.sequence_length,
             ).float()
         ).to(self.device)
 
         # To have a multi-machine-case, just place on different devices and sync the models once a while
-        self.impala = torch.jit.script(Impala(
-            sequence_length=self.sequence_length,
-            entropy_coef=self.entropy_coef,
-            value_coef=self.value_coef,
-            discount_factor=self.discount_factor,
-            model=self.model,
-            rho=self.rho,
-            cis=self.cis,
-            device=self.device
-        ))
+        self.impala = torch.jit.script(
+            Impala(
+                sequence_length=self.sequence_length,
+                entropy_coef=self.entropy_coef,
+                value_coef=self.value_coef,
+                discount_factor=self.discount_factor,
+                model=self.model,
+                rho=self.rho,
+                cis=self.cis,
+                device=self.device,
+            )
+        )
 
         # Sharing memory between processes
         self.model.share_memory()
         self.impala.share_memory()
 
         # Building the optimizer
-        self.optimizer = optim.RMSprop(self.model.parameters(),
-                                       lr=float(
-                                           self.config["optimizer"]["lr"]),
-                                       alpha=float(
-                                           self.config["optimizer"]["alpha"]),
-                                       eps=float(
-                                           self.config["optimizer"]["eps"]),
-                                       momentum=float(
-                                           self.config["optimizer"]["momentum"]),
-                                       weight_decay=float(
-                                           self.config["optimizer"]["weight_decay"]),
-                                       centered=self.config["optimizer"]["centered"] == "True")
+        self.optimizer = optim.RMSprop(
+            self.model.parameters(),
+            lr=float(self.config["optimizer"]["lr"]),
+            alpha=float(self.config["optimizer"]["alpha"]),
+            eps=float(self.config["optimizer"]["eps"]),
+            momentum=float(self.config["optimizer"]["momentum"]),
+            weight_decay=float(self.config["optimizer"]["weight_decay"]),
+            centered=self.config["optimizer"]["centered"] == "True",
+        )
 
         # Checkpoints directory
         self.checkpoint_path = self.config["settings"]["checkpoint_path"]
 
         # Building the torch.multiprocessing-queues
-        self.training_queue = Queue(maxsize=int(
-            self.config["settings"]["training_queue"]))
-        self.prediction_queue = Queue(maxsize=int(
-            self.config["settings"]["prediction_queue"]))
+        self.training_queue = Queue(
+            maxsize=int(self.config["settings"]["training_queue"])
+        )
+        self.prediction_queue = Queue(
+            maxsize=int(self.config["settings"]["prediction_queue"])
+        )
         self.statistics_queue = Queue()
 
         # Building the torch.multiprocessing-values
-        self.learning_step = Value('i', 0)
-        self.nb_episodes = Value('i', 0)
+        self.learning_step = Value("i", 0)
+        self.nb_episodes = Value("i", 0)
         self.max_nb_steps = int(self.config["settings"]["max_nb_episodes"])
 
         # Statistics thread
@@ -121,15 +122,15 @@ class Manager(Thread):
         self.statistics = Statistics(
             writer_dir=self.tensorboard,
             statistics_queue=self.statistics_queue,
-            nb_episodes=self.nb_episodes
+            nb_episodes=self.nb_episodes,
         )
 
         # Agents, predictions and learners
-        self.training_batch_size = int(
-            self.config["settings"]["training_batch_size"])
+        self.training_batch_size = int(self.config["settings"]["training_batch_size"])
         self.trainers = []
         self.prediction_batch_size = int(
-            self.config["settings"]["prediction_batch_size"])
+            self.config["settings"]["prediction_batch_size"]
+        )
         self.predictors = []
         self.agents = []
 
@@ -140,54 +141,63 @@ class Manager(Thread):
 
     def add_agents(self, nb):
         old_length = len(self.agents)
-        for index in range(old_length, old_length+nb):
-            self.agents.append(Agent(
-                id_=index,
-                prediction_queue=self.prediction_queue,
-                training_queue=self.training_queue,
-                states=self.train_set,
-                exit_flag=Value(c_bool, False),
-                statistics_queue=self.statistics_queue,
-                episode_counter=self.nb_episodes,
-                observation_shape=(self.channels, self.height, self.width),
-                action_space=self.n_outputs,
-                device=self.agent_device,
-                step_max=self.sequence_length
-            ))
+        for index in range(old_length, old_length + nb):
+            self.agents.append(
+                Agent(
+                    id_=index,
+                    prediction_queue=self.prediction_queue,
+                    training_queue=self.training_queue,
+                    states=self.train_set,
+                    exit_flag=Value(c_bool, False),
+                    statistics_queue=self.statistics_queue,
+                    episode_counter=self.nb_episodes,
+                    observation_shape=(self.channels, self.height, self.width),
+                    action_space=self.n_outputs,
+                    device=self.agent_device,
+                    step_max=self.sequence_length,
+                )
+            )
 
     def add_trainers(self, nb):
         old_length = len(self.trainers)
-        for index in range(old_length, old_length+nb):
-            self.trainers.append(Trainer(
-                id_=index,
-                training_queue=self.training_queue,
-                batch_size=self.training_batch_size,
-                model=self.impala,
-                optimizer=self.optimizer,
-                statistics_queue=self.statistics_queue,
-                learning_step=self.learning_step,
-                sequence_length=self.sequence_length
-            ))
+        for index in range(old_length, old_length + nb):
+            self.trainers.append(
+                Trainer(
+                    id_=index,
+                    training_queue=self.training_queue,
+                    batch_size=self.training_batch_size,
+                    model=self.impala,
+                    optimizer=self.optimizer,
+                    statistics_queue=self.statistics_queue,
+                    learning_step=self.learning_step,
+                    sequence_length=self.sequence_length,
+                )
+            )
 
     def add_predictors(self, nb):
         old_length = len(self.predictors)
-        for index in range(old_length, old_length+nb):
-            self.predictors.append(Predictor(
-                id_=index,
-                prediction_queue=self.prediction_queue,
-                agents=self.agents,
-                batch_size=self.prediction_batch_size,
-                model=self.impala,
-                statistics_queue=self.statistics_queue,
-                device=self.device
-            ))
+        for index in range(old_length, old_length + nb):
+            self.predictors.append(
+                Predictor(
+                    id_=index,
+                    prediction_queue=self.prediction_queue,
+                    agents=self.agents,
+                    batch_size=self.prediction_batch_size,
+                    model=self.impala,
+                    statistics_queue=self.statistics_queue,
+                    device=self.device,
+                )
+            )
 
     def save_model(self):
-        torch.save({
-            'epoch': self.nb_episodes.value,
-            'model_state_dict': self.impala.get_model_state_dict(),
-            'optimizer_state_dict': self.optimizer.state_dict()
-        }, self.config["settings"]["checkpoint_path"])
+        torch.save(
+            {
+                "epoch": self.nb_episodes.value,
+                "model_state_dict": self.impala.get_model_state_dict(),
+                "optimizer_state_dict": self.optimizer.state_dict(),
+            },
+            self.config["settings"]["checkpoint_path"],
+        )
 
     def run(self):
 
@@ -202,7 +212,7 @@ class Manager(Thread):
 
         # Loop
         while self.nb_episodes.value < self.max_nb_steps:
-            time.sleep(2*60)
+            time.sleep(2 * 60)
             self.save_model()
 
         # Marking the agent as stop

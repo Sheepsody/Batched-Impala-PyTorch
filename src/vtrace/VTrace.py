@@ -6,6 +6,7 @@ try:
 except:
     from torch.jit import Final
 
+
 class VTrace(nn.Module):
     """
     New PyTorch module for computing v-trace as in https://arxiv.org/abs/1802.01561 (IMPALA)
@@ -26,23 +27,23 @@ class VTrace(nn.Module):
     rho and cis are truncated importance sampling weights 
     As in https://arxiv.org/abs/1802.01561 it is assumed that rho >= cis
     """
-    __constants__ = [
-        'rho',
-        'cis',
-        'discount_factor',
-        'sequence_length'
-    ]
+
+    __constants__ = ["rho", "cis", "discount_factor", "sequence_length"]
 
     def __init__(self, discount_factor, sequence_length, rho=1.0, cis=1.0):
         super(VTrace, self).__init__()
 
         assert rho >= cis, "Truncation levels do not satify the asumption rho >= cis"
 
-        self.rho = nn.Parameter(torch.tensor(rho, dtype=torch.float), requires_grad=False)
-        self.cis = nn.Parameter(torch.tensor(cis, dtype=torch.float), requires_grad=False)
+        self.rho = nn.Parameter(
+            torch.tensor(rho, dtype=torch.float), requires_grad=False
+        )
+        self.cis = nn.Parameter(
+            torch.tensor(cis, dtype=torch.float), requires_grad=False
+        )
         self.discount_factor = discount_factor
         self.sequence_length = sequence_length
-    
+
     def forward(self, target_value, rewards, target_log_policy, behaviour_log_policy):
         """
         v-trace targets are computed recursively
@@ -76,23 +77,29 @@ class VTrace(nn.Module):
         vtrace = torch.zeros(target_value.size(), device=target_value.device)
 
         # Computing importance sampling for truncation levels
-        importance_sampling = torch.exp(target_log_policy-behaviour_log_policy)
+        importance_sampling = torch.exp(target_log_policy - behaviour_log_policy)
         clipped_rhos = torch.min(self.rho, importance_sampling)
         ciss = torch.min(self.cis, importance_sampling)
 
         # Recursive calculus
         # Initialisation : v_{-1}
         # v_s = V(x_s) + delta_sV + gamma*c_s(v_{s+1} - V(x_{s+1}))
-        vtrace[-1] = target_value[-1] # Bootstrapping
-        
+        vtrace[-1] = target_value[-1]  # Bootstrapping
+
         # Computing the deltas
-        delta = clipped_rhos * (rewards + self.discount_factor * target_value[1:] - target_value[:-1])
-        
+        delta = clipped_rhos * (
+            rewards + self.discount_factor * target_value[1:] - target_value[:-1]
+        )
+
         # Pytorch has no funtion such as tf.scan or theano.scan
         # This disgusting is compulsory for jit as reverse is not supported
         for j in range(self.sequence_length):
             i = (self.sequence_length - 1) - j
-            vtrace[i] = target_value[i] + delta[i] + self.discount_factor * ciss[i] * (vtrace[i+1] - target_value[i+1])
+            vtrace[i] = (
+                target_value[i]
+                + delta[i]
+                + self.discount_factor * ciss[i] * (vtrace[i + 1] - target_value[i + 1])
+            )
 
         # Don't forget to detach !
         # We need to remove the bootstrapping

@@ -46,38 +46,28 @@ class Statistics(Thread):
             step = self.nb_episodes.value
 
             if summary_type == summary_type.SCALAR:
-                self._writer.add_scalar(tag=tag,
-                                        scalar_value=data,
-                                        global_step=step)
+                self._writer.add_scalar(tag=tag, scalar_value=data, global_step=step)
 
             elif summary_type == summary_type.HISTOGRAM:
-                self._writer.add_histogram(tag=tag,
-                                           values=data,
-                                           global_step=step,
-                                           bins='tensorflow')
+                self._writer.add_histogram(
+                    tag=tag, values=data, global_step=step, bins="tensorflow"
+                )
 
             elif summary_type == summary_type.FIGURE:
-                self._writer.add_figure(tag=tag,
-                                        figure=data,
-                                        global_step=step)
+                self._writer.add_figure(tag=tag, figure=data, global_step=step)
 
             elif summary_type == summary_type.IMAGE:
                 if data.dim() > 3:
-                    self._writer.add_images(tag=tag,
-                                            img_tensor=data,
-                                            global_step=step,
-                                            dataformats='NCHW')
+                    self._writer.add_images(
+                        tag=tag, img_tensor=data, global_step=step, dataformats="NCHW"
+                    )
                 else:
-                    self._writer.add_image(tag=tag,
-                                           img_tensor=data,
-                                           global_step=step,
-                                           dataformats='CHW')
+                    self._writer.add_image(
+                        tag=tag, img_tensor=data, global_step=step, dataformats="CHW"
+                    )
 
             elif summary_type == summary_type.VIDEO:
-                self._writer.add_video(tag=tag,
-                                       data=data,
-                                       global_step=step,
-                                       fps=4)
+                self._writer.add_video(tag=tag, data=data, global_step=step, fps=4)
 
             elif summary_type == summary_type.GRAPH:
                 self._writer.add_graph(model=data)

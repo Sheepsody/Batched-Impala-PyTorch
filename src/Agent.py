@@ -11,19 +11,21 @@ from src.GymEnv import make_env
 class Agent(Process):
     """Agent process used to gather trajectories of experiences asynchronously"""
 
-    def __init__(self,
-                 id_,
-                 prediction_queue,
-                 training_queue,
-                 states,
-                 exit_flag,
-                 statistics_queue,
-                 episode_counter,
-                 observation_shape,
-                 action_space,
-                 device,
-                 step_max,
-                 lstm_hidden_size=256):
+    def __init__(
+        self,
+        id_,
+        prediction_queue,
+        training_queue,
+        states,
+        exit_flag,
+        statistics_queue,
+        episode_counter,
+        observation_shape,
+        action_space,
+        device,
+        step_max,
+        lstm_hidden_size=256,
+    ):
 
         # Calling parent class constructor
         super(Agent, self).__init__()
@@ -47,10 +49,12 @@ class Agent(Process):
 
         self.step_max = step_max
 
-        self.memory = AgentMemory(num_steps=self.step_max,
-                                  observation_shape=observation_shape,
-                                  lstm_hidden_size=lstm_hidden_size,
-                                  action_space=action_space)
+        self.memory = AgentMemory(
+            num_steps=self.step_max,
+            observation_shape=observation_shape,
+            lstm_hidden_size=lstm_hidden_size,
+            action_space=action_space,
+        )
         self.memory.to(self.device)
 
         # Episodes
@@ -82,7 +86,8 @@ class Agent(Process):
                 # Selecting a random state
                 state = random.choice(self.states)
                 self.env = make_env(
-                    state=state, stacks=self.channels, size=(self.width, self.heigh))
+                    state=state, stacks=self.channels, size=(self.width, self.heigh)
+                )
 
                 obs = self.env.reset()
                 done = False
@@ -92,10 +97,9 @@ class Agent(Process):
 
                 # Initialisation of LSTM memory
                 # Shape should be num_layers, batch_size, hidden_size
-                lstm_hxs = [torch.zeros((1, 1, 256)).to(self.device)]*2
+                lstm_hxs = [torch.zeros((1, 1, 256)).to(self.device)] * 2
 
-            obs_tensor = torch.tensor(obs, dtype=torch.float) \
-                .to(self.device)
+            obs_tensor = torch.tensor(obs, dtype=torch.float).to(self.device)
 
             # Sending to predictor
             self.prediction_queue.put((self.id, obs_tensor, lstm_hxs))
@@ -114,7 +118,7 @@ class Agent(Process):
                 action=action,
                 reward=torch.tensor(reward),
                 log_prob=log_prob,
-                done=torch.tensor(done)
+                done=torch.tensor(done),
             )
 
             episode_reward += reward
@@ -122,7 +126,7 @@ class Agent(Process):
             # We reset our environnement if the game is done
             if step == self.step_max:
 
-                assert self.memory.step == self.step_max+1, "Length issue"
+                assert self.memory.step == self.step_max + 1, "Length issue"
 
                 # Converting the data before sending
                 self.training_queue.put(self.memory.enqueue())
@@ -140,21 +144,31 @@ class Agent(Process):
             # Statistics about the episode
             if done:
                 self.episode_counter.value += 1
-                episode_duration = info["milliseconds"] + \
-                    (info["seconds"] + info["minutes"]*60)*60
+                episode_duration = (
+                    info["milliseconds"] + (info["seconds"] + info["minutes"] * 60) * 60
+                )
 
                 self.stats_queue.put(
-                    (SummaryType.SCALAR, "episode/duration", episode_duration))
+                    (SummaryType.SCALAR, "episode/duration", episode_duration)
+                )
                 self.stats_queue.put(
-                    (SummaryType.SCALAR, "episode/cumulated_reward", episode_reward))
+                    (SummaryType.SCALAR, "episode/cumulated_reward", episode_reward)
+                )
                 self.stats_queue.put(
-                    (SummaryType.SCALAR, "episode/nb_episodes", self.episode_counter.value))
+                    (
+                        SummaryType.SCALAR,
+                        "episode/nb_episodes",
+                        self.episode_counter.value,
+                    )
+                )
 
                 # Only statistic that is logged
-                print(f"Episode n° {self.episode_counter.value} finished \
+                print(
+                    f"Episode n° {self.episode_counter.value} finished \
                     \t Duration: {episode_duration} steps \
                     \t State : {state} \
-                    \t Cumulated reward {episode_reward}")
+                    \t Cumulated reward {episode_reward}"
+                )
 
                 # Reset the episode
                 self.env.close()
@@ -167,15 +181,15 @@ class Agent(Process):
 Trajectory = namedtuple(
     "Trajectory",
     [
-        'length',
-        'observations',
-        'actions',
-        'rewards',
-        'log_probs',
-        'done',
-        'lstm_initial_hidden',
-        'lstm_initial_cell'
-    ]
+        "length",
+        "observations",
+        "actions",
+        "rewards",
+        "log_probs",
+        "done",
+        "lstm_initial_hidden",
+        "lstm_initial_cell",
+    ],
 )
 
 
@@ -183,13 +197,13 @@ class AgentMemory(object):
     """Storage for the Agent experiences"""
 
     def __init__(self, num_steps, observation_shape, lstm_hidden_size, action_space):
-        self.observations = torch.zeros(1+num_steps, *observation_shape)
+        self.observations = torch.zeros(1 + num_steps, *observation_shape)
         self.lstm_initial_hidden = torch.zeros(1, 1, lstm_hidden_size)
         self.lstm_initial_cell = torch.zeros(1, 1, lstm_hidden_size)
-        self.actions = torch.zeros(1+num_steps, 1)
-        self.rewards = torch.zeros(1+num_steps, 1)
-        self.log_probs = torch.zeros(1+num_steps, 1)
-        self.done = torch.zeros(1+num_steps, 1)
+        self.actions = torch.zeros(1 + num_steps, 1)
+        self.rewards = torch.zeros(1 + num_steps, 1)
+        self.log_probs = torch.zeros(1 + num_steps, 1)
+        self.done = torch.zeros(1 + num_steps, 1)
         self.step = 0
 
     def to(self, device):
@@ -227,13 +241,13 @@ class AgentMemory(object):
         return Trajectory(
             length=self.step,
             # Sequence and bootstrapping
-            observations=self.observations[:self.step].clone().to(device),
-            actions=self.actions[:self.step].clone().to(device),
-            done=self.done[:self.step].clone().to(device),
+            observations=self.observations[: self.step].clone().to(device),
+            actions=self.actions[: self.step].clone().to(device),
+            done=self.done[: self.step].clone().to(device),
             # Full sequence
-            rewards=self.rewards[:self.step-1].clone().to(device),
-            log_probs=self.log_probs[:self.step-1].clone().to(device),
+            rewards=self.rewards[: self.step - 1].clone().to(device),
+            log_probs=self.log_probs[: self.step - 1].clone().to(device),
             # Initial hidden states
             lstm_initial_hidden=self.lstm_initial_hidden.clone().to(device),
-            lstm_initial_cell=self.lstm_initial_cell.clone().to(device)
+            lstm_initial_cell=self.lstm_initial_cell.clone().to(device),
         )

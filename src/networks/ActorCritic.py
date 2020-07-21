@@ -12,6 +12,7 @@ from typing import Tuple
 
 class BodyType(Enum):
     """Enum to specify the body of out network"""
+
     SHALLOW = 1
     DEEP = 2
 
@@ -19,12 +20,7 @@ class BodyType(Enum):
 class ActorCriticLSTM(nn.Module):
     """Actor Critic network with an LSTM on top, and accelerated with jit"""
 
-    __constants__ = [
-        "flatten_dim",
-        "hidden_size",
-        "n_outputs",
-        "sequence_length"
-    ]
+    __constants__ = ["flatten_dim", "hidden_size", "n_outputs", "sequence_length"]
 
     def __init__(self, h, w, c, n_outputs, sequence_length=1, body=BodyType.SHALLOW):
         """You can have several types of body as long as they implement the size function"""
@@ -45,35 +41,28 @@ class ActorCriticLSTM(nn.Module):
             raise AttributeError("The body type is not valid")
 
         conv_out = self.convs.output_size((h, w))
-        self.flatten_dim = int(32*conv_out[0]*conv_out[1])
+        self.flatten_dim = int(32 * conv_out[0] * conv_out[1])
 
         # Fully connected layers
         self.flatten = Flatten()
-        self.fc = nn.Linear(in_features=self.flatten_dim,
-                            out_features=self.hidden_size)
+        self.fc = nn.Linear(in_features=self.flatten_dim, out_features=self.hidden_size)
 
-        self.body = nn.Sequential(
-            self.convs,
-            Flatten(),
-            nn.ReLU(),
-            self.fc,
-            nn.ReLU()
-        )
+        self.body = nn.Sequential(self.convs, Flatten(), nn.ReLU(), self.fc, nn.ReLU())
 
         # LSTM (Memory Layer)
-        self.lstm = nn.LSTM(input_size=self.hidden_size,
-                            hidden_size=self.hidden_size,
-                            num_layers=1)
+        self.lstm = nn.LSTM(
+            input_size=self.hidden_size, hidden_size=self.hidden_size, num_layers=1
+        )
 
         # Allocate tensors as contiguous on GPU memory
         self.lstm.flatten_parameters()
 
         # Fully conected layers for value and policy
-        self.value = nn.Linear(in_features=self.hidden_size,
-                               out_features=1)
+        self.value = nn.Linear(in_features=self.hidden_size, out_features=1)
 
-        self.logits = nn.Linear(in_features=self.hidden_size,
-                                out_features=self.n_outputs)
+        self.logits = nn.Linear(
+            in_features=self.hidden_size, out_features=self.n_outputs
+        )
 
         # Using those distributions doesn't affect the gradient calculus
         # see https://arxiv.org/abs/1506.05254 for more infos
@@ -110,7 +99,9 @@ class ActorCriticLSTM(nn.Module):
         return action, log_prob
 
     @torch.jit.export
-    def act_greedy(self, obs: torch.Tensor, lstm_hxs: Tuple[torch.Tensor, torch.Tensor]):
+    def act_greedy(
+        self, obs: torch.Tensor, lstm_hxs: Tuple[torch.Tensor, torch.Tensor]
+    ):
         """Performs an one-step prediction with detached gradients"""
         # x : (batch, input_size)
         x = self.body.forward(obs)
@@ -130,7 +121,9 @@ class ActorCriticLSTM(nn.Module):
 
         return action.detach(), lstm_hxs
 
-    def forward(self, obs, lstm_hxs: Tuple[torch.Tensor, torch.Tensor], mask, behaviour_actions):
+    def forward(
+        self, obs, lstm_hxs: Tuple[torch.Tensor, torch.Tensor], mask, behaviour_actions
+    ):
         """
         x : (seq, batch, c, h, w)
         mask : (seq, batch)
@@ -153,7 +146,7 @@ class ActorCriticLSTM(nn.Module):
         x = x.unsqueeze(1)  # (seq_len, 1, batch, input)
         x_lstm = []
 
-        for i in range(self.sequence_length+1):
+        for i in range(self.sequence_length + 1):
             # One step pass of lstm
             result, lstm_hxs = self.lstm(x[i], lstm_hxs)
 
@@ -166,14 +159,14 @@ class ActorCriticLSTM(nn.Module):
         x = torch.stack(tensors=x_lstm, dim=0)  # (seq_len, batch, input)
 
         x = x.view(seq * batch, self.hidden_size)
-        behaviour_actions = behaviour_actions.view(
-            seq * batch)  # Shape for dist
+        behaviour_actions = behaviour_actions.view(seq * batch)  # Shape for dist
 
         target_value = self.value(x)
         logits = self.logits(x)
 
-        target_log_probs, target_entropy = \
-            self._forward_dist(target_value, logits, behaviour_actions)
+        target_log_probs, target_entropy = self._forward_dist(
+            target_value, logits, behaviour_actions
+        )
 
         target_log_probs = target_log_probs.view(seq, batch, 1)
         target_entropy = target_entropy.view(seq, batch, 1)
